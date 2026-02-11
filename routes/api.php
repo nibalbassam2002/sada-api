@@ -12,19 +12,8 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
 Route::get('/update-db', function() {
-    try {
-        // 1. مسح وإنشاء الجداول من الصفر (بدون تشغيل السيدر التلقائي لتجنب خطأ fake)
-        \Illuminate\Support\Facades\Artisan::call('migrate:fresh --force');
-
-        // 2. تشغيل صفحة السوبر أدمن التي أنشأتها أنت خصيصاً بالاسم
-        \Illuminate\Support\Facades\Artisan::call('db:seed', [
-            '--class' => 'SuperAdminSeeder',
-            '--force' => true
-        ]);
-
-        return 'Success: Database wiped, migrated, and SuperAdminSeeder executed!';
-    } catch (\Exception $e) {
-        // في حال حدوث أي خطأ، سيخبرك به هنا بدلاً من تعليق الموقع
-        return 'Error: ' . $e->getMessage();
-    }
+    // استخدمنا fresh بدلاً من refresh
+    // fresh: يحذف الجداول فوراً دون النظر لدالة down
+    \Illuminate\Support\Facades\Artisan::call('migrate:fresh --seed --force');
+    return 'Database Wiped & Re-Created Successfully with Full Details!';
 });
