@@ -72,14 +72,43 @@ class AuthController extends Controller
             'user'         => $user
         ]);
     }
-    public function forgotPassword(Request $request)
-{
-    $request->validate(['email' => 'required|email|exists:users,email']);
+     public function forgotPassword(Request $request)
+    {
+        $request->validate(['email' => 'required|email|exists:users,email']);
 
-    $status = Password::sendResetLink($request->only('email'));
+        $status = Password::sendResetLink($request->only('email'));
 
-    return $status === Password::RESET_LINK_SENT
-        ? response()->json(['message' => 'Password reset link has been sent to your email!'])
-        : response()->json(['message' => 'Something went wrong, please try again.'], 500);
-}
+        return $status === Password::RESET_LINK_SENT
+            ? response()->json(['message' => 'Password reset link has been sent to your email!'])
+            : response()->json(['message' => 'Something went wrong, please try again.'], 500);
+    }
+
+    
+    public function resetPassword(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'token'    => 'required',
+            'email'    => 'required|email',
+            'password' => 'required|string|min:8|confirmed', // يطلب password_confirmation
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['message' => 'Validation Error', 'errors' => $validator->errors()], 422);
+        }
+
+        // تنفيذ عملية إعادة التعيين
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function ($user, $password) {
+                $user->forceFill([
+                    'password' => Hash::make($password)
+                ])->setRememberToken(Str::random(60));
+                $user->save();
+            }
+        );
+
+        return $status === Password::PASSWORD_RESET
+            ? response()->json(['message' => 'Your password has been reset successfully!'])
+            : response()->json(['message' => 'Invalid token or email.'], 400);
+    }
 }
