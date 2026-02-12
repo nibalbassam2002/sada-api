@@ -7,19 +7,20 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Password;
 
 class AuthController extends Controller
 {
     public function register(Request $request)
     {
-        // 1. التحقق من البيانات (Validation)
+        
         $validator = Validator::make($request->all(), [
             'name'     => 'required|string|max:255',
             'email'    => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8',
         ]);
 
-        // إذا فشل التحقق، نرسل الأخطاء فوراً لبوستمان
+        
         if ($validator->fails()) {
             return response()->json([
                 'status'  => false,
@@ -28,14 +29,14 @@ class AuthController extends Controller
             ], 422);
         }
 
-        // 2. إنشاء المستخدم
+        
         $user = User::create([
             'name'     => $request->name,
             'email'    => $request->email,
             'password' => Hash::make($request->password),
         ]);
 
-        // 3. إنشاء التوكن
+        
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
@@ -49,7 +50,7 @@ class AuthController extends Controller
 
     public function login(Request $request)
     {
-        // التحقق من وجود الإيميل والباسورد في الطلب
+        
         if (!$request->email || !$request->password) {
             return response()->json(['message' => 'Email and password are required'], 422);
         }
@@ -71,4 +72,14 @@ class AuthController extends Controller
             'user'         => $user
         ]);
     }
+    public function forgotPassword(Request $request)
+{
+    $request->validate(['email' => 'required|email|exists:users,email']);
+
+    $status = Password::sendResetLink($request->only('email'));
+
+    return $status === Password::RESET_LINK_SENT
+        ? response()->json(['message' => 'Password reset link has been sent to your email!'])
+        : response()->json(['message' => 'Something went wrong, please try again.'], 500);
+}
 }
