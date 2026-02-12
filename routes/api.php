@@ -13,9 +13,14 @@ Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
+
 Route::get('/update-db', function() {
     // استخدمنا fresh بدلاً من refresh
     // fresh: يحذف الجداول فوراً دون النظر لدالة down
     \Illuminate\Support\Facades\Artisan::call('migrate:fresh --seed --force');
     return 'Database Wiped & Re-Created Successfully with Full Details!';
 });
+// السطر ده وظيفته بس يخلي لارافيل يشوف الاسم اللي هو بيدور عليه
+Route::get('/reset-password/{token}', function ($token) {
+    return 'reset page';
+})->name('password.reset');
