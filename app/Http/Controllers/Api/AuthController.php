@@ -91,14 +91,14 @@ class AuthController extends Controller
         $validator = Validator::make($request->all(), [
             'token'    => 'required',
             'email'    => 'required|email',
-            'password' => 'required|string|min:8|confirmed', // يطلب password_confirmation
+            'password' => 'required|string|min:8|confirmed', 
         ]);
 
         if ($validator->fails()) {
             return response()->json(['message' => 'Validation Error', 'errors' => $validator->errors()], 422);
         }
 
-        // تنفيذ عملية إعادة التعيين
+        
         $status = Password::reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function ($user, $password) {
@@ -112,5 +112,33 @@ class AuthController extends Controller
         return $status === Password::PASSWORD_RESET
             ? response()->json(['message' => 'Your password has been reset successfully!'])
             : response()->json(['message' => 'Invalid token or email.'], 400);
+    }
+    
+    public function redirectToGoogle()
+    {
+        return Socialite::driver('google')->stateless()->redirect();
+    }
+
+    public function handleGoogleCallback()
+    {
+        try {
+            $googleUser = Socialite::driver('google')->stateless()->user();
+            
+            $user = User::updateOrCreate([
+                'email' => $googleUser->email,
+            ], [
+                'name' => $googleUser->name,
+                'password' => Hash::make(Str::random(24)), 
+            ]);
+
+            
+            $token = $user->createToken('auth_token')->plainTextToken;
+
+            
+            return redirect('http://localhost:5173/login?token=' . $token . '&user=' . urlencode(json_encode($user)));
+
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Google authentication failed', 'error' => $e->getMessage()], 500);
+        }
     }
 }
