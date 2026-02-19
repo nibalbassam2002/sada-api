@@ -79,26 +79,5 @@ public function getReport($id)
         'sessions' => $presentation->sessions, // قائمة بكل الجلسات وتفاصيلها للتقرير
     ]);
 }
-// 1. إضافة إنشاء عرض جديد
-public function store(Request $request)
-{
-    $request->validate(['title' => 'required|string|max:255']);
 
-    $presentation = Presentation::create([
-        'user_id' => auth()->id(),
-        'title'   => $request->title,
-        'status'  => 'draft'
-    ]);
-
-    return response()->json(['status' => true, 'data' => $presentation], 201);
-}
-
-// 2. إضافة الحذف النهائي
-public function destroy($id)
-{
-    $presentation = Presentation::where('user_id', auth()->id())->findOrFail($id);
-    $presentation->delete();
-
-    return response()->json(['status' => true, 'message' => 'تم حذف العرض نهائياً']);
-}
 }
