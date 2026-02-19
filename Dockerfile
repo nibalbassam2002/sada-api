@@ -35,9 +35,7 @@ COPY . .
 # 8. تثبيت مكتبات لارافل (Composer)
 RUN composer install --no-interaction --optimize-autoloader --no-dev
 
-# --- إضافة: بناء ملفات Vite (CSS & JS) داخل السيرفر ---
-RUN npm install
-RUN npm run build
+
 
 # ==========================================
 # 9. إعدادات Nginx
