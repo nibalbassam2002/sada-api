@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string('title');
             $table->text('description')->nullable();
             $table->json('theme_settings')->nullable(); 
+            $table->enum('status', ['draft', 'ready', 'archived'])->default('draft');
             $table->timestamps();
             $table->softDeletes(); //للارشفة
         });

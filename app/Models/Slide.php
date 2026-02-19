@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Slide extends Model
 {
-    protected $fillable = ['presentation_id', 'type', 'content', 'settings', 'order'];
+    protected $fillable = ['presentation_id', 'category', 'type', 'content', 'settings', 'order'];
 
     protected $casts = [
         'content' => 'array',

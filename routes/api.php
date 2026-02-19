@@ -11,7 +11,12 @@ Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 Route::get('/auth/google', [AuthController::class, 'redirectToGoogle']);
 Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallback']);
 
-
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/presentations', [PresentationController::class, 'index']); // جلب القائمة
+    Route::post('/presentations/{id}/duplicate', [PresentationController::class, 'duplicate']); // نسخ
+    Route::patch('/presentations/{id}/archive', [PresentationController::class, 'toggleArchive']); // أرشفة
+    Route::get('/presentations/{id}/report', [PresentationController::class, 'getReport']); // تقرير
+});
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });

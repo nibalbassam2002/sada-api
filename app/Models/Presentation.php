@@ -11,7 +11,7 @@ class Presentation extends Model
 {
     use SoftDeletes;
 
-    protected $fillable = ['user_id', 'template_id', 'title', 'description', 'theme_settings'];
+    protected $fillable = ['user_id', 'template_id', 'title', 'description', 'theme_settings', 'status'];
 
     public function user(): BelongsTo
     {
