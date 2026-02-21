@@ -11,7 +11,6 @@ class PresentationController extends Controller
 {
         public function index()
     {
-        // جلب العروض مع الإحصائيات المطلوبة
         $presentations = Presentation::where('user_id', auth()->id())
             ->withCount(['slides', 'sessions']) // جلب عدد الشرائح وعدد الجلسات
             ->orderBy('updated_at', 'desc')
@@ -31,7 +30,67 @@ class PresentationController extends Controller
 
         return response()->json([
             'status' => true,
-            'data' => $presentations // إذا كانت المصفوفة فارغة، واجهة React ستعرف تلقائياً وتظهر "لا يوجد مشاريع"
+            'data' => $presentations 
+        ]);
+    }
+        public function store(Request $request)
+    {
+        $request->validate([
+            'title' => 'required|string|max:255',
+            'template_id' => 'nullable|exists:templates,id'
+        ]);
+
+        //  إنشاء العرض التقديمي
+        $presentation = Presentation::create([
+            'user_id' => auth()->id(),
+            'template_id' => $request->template_id,
+            'title' => $request->title,
+            'status' => 'draft'
+        ]);
+
+    //إذا اختار المستخدم قالباً جاهز  
+        if ($request->template_id) {
+            $this->createTemplateSlides($presentation);
+        } else {
+            $presentation->slides()->create([
+                'category' => 'content',
+                'type' => 'blank_slide',
+                'order' => 1,
+                'content' => ['title' => 'New Slide', 'text' => 'Start here...']
+            ]);
+        }
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Presentation created successfully',
+            'data' => $presentation->load('slides')
+        ], 201);
+    }
+
+    private function createTemplateSlides($presentation)
+    {
+        // شريحة البداية (Start Slide)
+        $presentation->slides()->create([
+            'category' => 'content',
+            'type' => 'start_slide',
+            'order' => 1,
+            'content' => ['title' => $presentation->title, 'subtitle' => 'Welcome to our presentation']
+        ]);
+
+        // شريحة المحتوى (Content Slide)
+        $presentation->slides()->create([
+            'category' => 'content',
+            'type' => 'content_slide',
+            'order' => 2,
+            'content' => ['title' => 'Main Topic', 'body' => 'Add your points here']
+        ]);
+
+        // شريحة النهاية (End Slide)
+        $presentation->slides()->create([
+            'category' => 'content',
+            'type' => 'end_slide',
+            'order' => 3,
+            'content' => ['title' => 'Thank You', 'subtitle' => 'Any questions?']
         ]);
     }
 
@@ -44,7 +103,7 @@ class PresentationController extends Controller
     $new->title = $original->title . ' (Copy)';
     $new->save();
 
-    // نسخ الشرائح والخيارات المرتبطة بها (Deep Copy)
+    //(Deep Copy)
     foreach ($original->slides as $slide) {
         $newSlide = $slide->replicate();
         $newSlide->presentation_id = $new->id;

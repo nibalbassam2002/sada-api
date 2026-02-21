@@ -16,6 +16,7 @@ return new class extends Migration
             $table->foreignId('presentation_id')->constrained()->onDelete('cascade');
             // 1. تحديد الفئة: هل هي محتوى أم سؤال تفاعلي؟
             $table->enum('category', ['content', 'interaction'])->default('content');
+            $table->enum('section', ['intro', 'body', 'final'])->default('body');
             $table->string('type'); 
             $table->json('content'); 
             $table->json('settings')->nullable();  

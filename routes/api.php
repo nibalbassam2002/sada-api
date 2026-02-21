@@ -13,6 +13,7 @@ Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallbac
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/presentations', [PresentationController::class, 'index']); // جلب القائمة
+    Route::post('/presentations', [PresentationController::class, 'store']);
     Route::post('/presentations/{id}/duplicate', [PresentationController::class, 'duplicate']); // نسخ
     Route::patch('/presentations/{id}/archive', [PresentationController::class, 'toggleArchive']); // أرشفة
     Route::get('/presentations/{id}/report', [PresentationController::class, 'getReport']); // تقرير
@@ -28,5 +29,5 @@ Route::get('/update-db', function() {
 });
 
 Route::get('/reset-password/{token}', function ($token) {
-    return 'reset page';
+    return redirect("http://localhost:5173/reset-password?token=$token");
 })->name('password.reset');
