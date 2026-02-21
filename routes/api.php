@@ -23,17 +23,9 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 });
 
 Route::get('/update-db', function() {
-    try {
-        
-        \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
-        
-        
-        \Illuminate\Support\Facades\Artisan::call('db:seed', ['--force' => true]);
-        
-        return 'Database Re-Created & Seeded Successfully!';
-    } catch (\Exception $e) {
-        return 'Error: ' . $e->getMessage();
-    }
+    
+    \Illuminate\Support\Facades\Artisan::call('migrate:fresh --seed --force');
+    return 'Database Wiped & Re-Created Successfully with Full Details!';
 });
 
 Route::get('/reset-password/{token}', function ($token) {

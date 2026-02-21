@@ -9,30 +9,30 @@ use Illuminate\Support\Facades\Auth;
 
 class PresentationController extends Controller
 {
-        public function index()
-    {
-        $presentations = Presentation::where('user_id', auth()->id())
-            ->withCount(['slides', 'sessions']) // جلب عدد الشرائح وعدد الجلسات
-            ->orderBy('updated_at', 'desc')
-            ->get()
-            ->map(function ($pres) {
-                return [
-                    'id' => $pres->id,
-                    'title' => $pres->title,
-                    'status' => $pres->status, // draft, ready, archived
-                    'slides_count' => $pres->slides_count,
-                    'sessions_count' => $pres->sessions_count,
-                    'last_run' => $pres->sessions()->latest()->first()?->started_at, // آخر تاريخ تشغيل
-                    'total_participants' => $pres->sessions()->sum('participants_count'), // مجموع المشاركين في كل الجلسات
-                    'created_at' => $pres->created_at->format('Y-m-d'),
-                ];
-            });
+      public function index()
+{
+    $presentations = Presentation::where('user_id', auth()->id())
+        ->withCount(['slides']) // نكتفي بالشرائح حالياً
+        ->orderBy('updated_at', 'desc')
+        ->get()
+        ->map(function ($pres) {
+            return [
+                'id' => $pres->id,
+                'title' => $pres->title,
+                'status' => $pres->status,
+                'slides_count' => $pres->slides_count,
+                'sessions_count' => 0, // نضع قيمة صفر مؤقتاً
+                'last_run' => null, 
+                'total_participants' => 0,
+                'created_at' => $pres->created_at->format('Y-m-d'),
+            ];
+        });
 
-        return response()->json([
-            'status' => true,
-            'data' => $presentations 
-        ]);
-    }
+    return response()->json([
+        'status' => true,
+        'data' => $presentations 
+    ]);
+}  
         public function store(Request $request)
     {
         $request->validate([
