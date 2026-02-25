@@ -138,5 +138,11 @@ public function getReport($id)
         'sessions' => $presentation->sessions, // قائمة بكل الجلسات وتفاصيلها للتقرير
     ]);
 }
+public function destroy($id)
+{
+    $presentation = Presentation::where('user_id', auth()->id())->findOrFail($id);
+    $presentation->delete(); // هذا سيمسح المشروع وكل الشرائح التابعة له بسبب الـ cascade في المايجريشن
+    return response()->json(['status' => true, 'message' => 'Deleted successfully']);
+}
 
 }
