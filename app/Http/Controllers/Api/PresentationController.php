@@ -138,11 +138,27 @@ public function getReport($id)
         'sessions' => $presentation->sessions, // قائمة بكل الجلسات وتفاصيلها للتقرير
     ]);
 }
-public function destroy($id)
-{
-    $presentation = Presentation::where('user_id', auth()->id())->findOrFail($id);
-    $presentation->delete(); // هذا سيمسح المشروع وكل الشرائح التابعة له بسبب الـ cascade في المايجريشن
-    return response()->json(['status' => true, 'message' => 'Deleted successfully']);
-}
+    public function destroy($id)
+    {
+        $presentation = Presentation::where('user_id', auth()->id())->findOrFail($id);
+        $presentation->delete(); // هذا سيمسح المشروع وكل الشرائح التابعة له بسبب الـ cascade في المايجريشن
+        return response()->json(['status' => true, 'message' => 'Deleted successfully']);
+    }
+    public function update(Request $request, $id)
+    {
+        $presentation = Presentation::where('user_id', auth()->id())->findOrFail($id);
 
+        $request->validate([
+            'title' => 'required|string|max:255',
+        ]);
+
+        $presentation->update([
+            'title' => $request->title
+        ]);
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Presentation title updated successfully'
+        ]);
+    }
 }

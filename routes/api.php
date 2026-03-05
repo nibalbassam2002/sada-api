@@ -19,6 +19,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/presentations/{id}/archive', [PresentationController::class, 'toggleArchive']); // أرشفة
     Route::get('/presentations/{id}/report', [PresentationController::class, 'getReport']); // تقرير
     Route::delete('/presentations/{id}', [PresentationController::class, 'destroy']);
+    Route::patch('/slides/{id}', [SlideController::class, 'update']);
+    Route::patch('/presentations/{id}/title', [PresentationController::class, 'updateTitle']);
 });
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
