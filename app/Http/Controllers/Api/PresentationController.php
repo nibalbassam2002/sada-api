@@ -161,4 +161,39 @@ public function getReport($id)
             'message' => 'Presentation title updated successfully'
         ]);
     }
+
+    public function syncSlides(Request $request, $id)
+    {
+        $presentation = Presentation::where('user_id', auth()->id())->findOrFail($id);
+
+        if ($request->has('title')) {
+            $presentation->update(['title' => $request->title]);
+        }
+
+        $incomingSlides = $request->input('slides');
+        $keptSlideIds = [];
+
+        foreach ($incomingSlides as $index => $slideData) {
+            $slide = $presentation->slides()->updateOrCreate(
+                ['id' => $slideData['id'] ?? null], 
+                [
+                    'order' => $index + 1,
+                    'layout' => $slideData['layout'] ?? 'Blank',
+                    'category' => $slideData['category'] ?? 'content',
+                    'type' => $slideData['questionType'] ?? 'content',
+                    'content' => $slideData, 
+                    'settings' => $slideData['settings'] ?? [],
+                ]
+            );
+            $keptSlideIds[] = $slide->id;
+        }
+
+        $presentation->slides()->whereNotIn('id', $keptSlideIds)->delete();
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Presentation synced successfully',
+            'data' => $presentation->load('slides') 
+        ]);
+    }
 }

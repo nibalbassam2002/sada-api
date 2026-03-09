@@ -21,6 +21,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/presentations/{id}', [PresentationController::class, 'destroy']);
     Route::patch('/slides/{id}', [SlideController::class, 'update']);
     Route::patch('/presentations/{id}/title', [PresentationController::class, 'updateTitle']);
+    Route::post('/presentations/{id}/sync', [PresentationController::class, 'syncSlides']);
 });
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
