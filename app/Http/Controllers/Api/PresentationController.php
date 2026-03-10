@@ -196,4 +196,23 @@ public function getReport($id)
             'data' => $presentation->load('slides') 
         ]);
     }
+    public function show($id)
+    {
+        $presentation = Presentation::where('user_id', auth()->id())
+            ->with(['slides' => function($q) {
+                $q->orderBy('order', 'asc');
+            }])
+            ->findOrFail($id);
+
+        return response()->json([
+            'status' => true,
+            'data' => [
+                'id' => $presentation->id,
+                'title' => $presentation->title,
+                'slides' => $presentation->slides->map(function($slide) {
+                    return $slide->content; 
+                })
+            ]
+        ]);
+    }
 }

@@ -15,6 +15,7 @@ Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallbac
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/presentations', [PresentationController::class, 'index']); // جلب القائمة
     Route::post('/presentations', [PresentationController::class, 'store']);
+    Route::get('/presentations/{id}', [PresentationController::class, 'show']);
     Route::post('/presentations/{id}/duplicate', [PresentationController::class, 'duplicate']); // نسخ
     Route::patch('/presentations/{id}/archive', [PresentationController::class, 'toggleArchive']); // أرشفة
     Route::get('/presentations/{id}/report', [PresentationController::class, 'getReport']); // تقرير
