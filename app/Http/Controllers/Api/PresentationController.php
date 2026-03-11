@@ -13,19 +13,28 @@ class PresentationController extends Controller
     {
         $presentations = Presentation::where('user_id', auth()->id())
             ->withCount(['slides'])
+            ->with(['slides' => function($q) {
+                $q->orderBy('order', 'asc')->limit(1); // أول شريحة فقط
+            }])
             ->orderBy('updated_at', 'desc')
             ->get()
             ->map(function ($pres) {
+                // محتوى أول شريحة
+                $firstSlide = $pres->slides->first();
+                $firstContent = $firstSlide ? (is_array($firstSlide->content) ? $firstSlide->content : []) : [];
+                if ($firstSlide) $firstContent['id'] = $firstSlide->id;
+
                 return [
                     'id'                 => $pres->id,
                     'title'              => $pres->title,
                     'status'             => $pres->status,
-                    'template_id'        => $pres->template_id, // ✅
+                    'template_id'        => $pres->template_id,
                     'slides_count'       => $pres->slides_count,
                     'sessions_count'     => 0,
                     'last_run'           => null,
                     'total_participants' => 0,
                     'created_at'         => $pres->created_at->format('Y-m-d'),
+                    'first_slide'        => $firstContent, // ✅ محتوى أول شريحة
                 ];
             });
 
