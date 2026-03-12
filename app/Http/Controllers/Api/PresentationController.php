@@ -11,6 +11,7 @@ class PresentationController extends Controller
 {
     public function index()
     {
+        
         $presentations = Presentation::where('user_id', auth()->id())
             ->withCount(['slides'])
             ->with(['slides' => function($q) {
