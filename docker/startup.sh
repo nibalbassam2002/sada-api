@@ -27,4 +27,31 @@ service nginx start
 
 # 6. تشغيل PHP-FPM (العملية الرئيسية)
 echo "Starting PHP-FPM..."
+#!/bin/bash
+
+echo "Starting deployment..."
+
+# تنظيف الكاش
+php artisan config:clear
+php artisan cache:clear
+
+# تشغيل الميغريشن
+echo "Running migrations..."
+php artisan migrate --force
+
+# تشغيل السيدر
+echo "Running Seeders..."
+php artisan db:seed --class=SuperAdminSeeder --force
+
+# --- السطر الجديد هنا: تشغيل Reverb في الخلفية ---
+echo "Starting Reverb..."
+php artisan reverb:start --host=0.0.0.0 --port=8080 &
+
+# تشغيل Nginx
+echo "Starting Nginx..."
+service nginx start
+
+# تشغيل PHP-FPM
+echo "Starting PHP-FPM..."
+php-fpm
 php-fpm

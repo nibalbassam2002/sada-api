@@ -41,7 +41,9 @@ RUN composer install --no-interaction --optimize-autoloader --no-dev
 # 9. إعدادات Nginx
 RUN rm -rf /etc/nginx/sites-enabled/default
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
-
+# تثبيت مكتبات الفرونت إند وبناء الملفات
+RUN npm install
+RUN npm run build
 # 10. صلاحيات الملفات
 RUN chown -R www-data:www-data /var/www \
     && chmod -R 775 /var/www/storage /var/www/bootstrap/cache
