@@ -4,6 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\PresentationController;
+use App\Http\Controllers\Api\SessionController;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
@@ -11,6 +12,9 @@ Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
 Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 Route::get('/auth/google', [AuthController::class, 'redirectToGoogle']);
 Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallback']);
+Route::get( 'sessions/{code}/info', [SessionController::class, 'info']);
+Route::post('sessions/join',        [SessionController::class, 'join']);
+Route::get( 'sessions/{id}/status', [SessionController::class, 'status']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/presentations', [PresentationController::class, 'index']); // جلب القائمة
@@ -23,6 +27,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/slides/{id}', [SlideController::class, 'update']);
     Route::patch('/presentations/{id}/title', [PresentationController::class, 'updateTitle']);
     Route::post('/presentations/{id}/sync', [PresentationController::class, 'syncSlides']);
+    Route::post('presentations/{id}/sessions/start', [SessionController::class, 'start']);
+    Route::get( 'presentations/{id}/sessions/current', [SessionController::class, 'current']);
+    Route::post('sessions/{id}/launch', [SessionController::class, 'launch']);
+    Route::post('sessions/{id}/slide',  [SessionController::class, 'changeSlide']);
+    Route::post('sessions/{id}/end',  [SessionController::class, 'end']);
+    Route::get( 'sessions/{id}/participants', [SessionController::class, 'participants']);
 });
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();

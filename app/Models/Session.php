@@ -1,4 +1,5 @@
 <?php
+// app/Models/Session.php
 
 namespace App\Models;
 
@@ -11,7 +12,23 @@ class Session extends Model
 {
     use SoftDeletes;
 
-    protected $fillable = ['presentation_id', 'access_code', 'status', 'current_slide_id', 'started_at', 'ended_at'];
+    protected $table = 'live_sessions';
+
+    protected $fillable = [
+        'presentation_id', 'access_code', 'status',
+        'current_slide_id', 'is_voting_open', 'show_results',
+        'timer_duration', 'timer_started_at', 'session_settings',
+        'started_at', 'ended_at',
+    ];
+
+    protected $casts = [
+        'session_settings' => 'array',
+        'is_voting_open'   => 'boolean',
+        'show_results'     => 'boolean',
+        'started_at'       => 'datetime',
+        'ended_at'         => 'datetime',
+        'timer_started_at' => 'datetime',
+    ];
 
     public function presentation(): BelongsTo
     {
@@ -25,11 +42,11 @@ class Session extends Model
 
     public function participants(): HasMany
     {
-        return $this->hasMany(Participant::class);
+        return $this->hasMany(Participant::class, 'session_id');
     }
 
     public function responses(): HasMany
     {
-        return $this->hasMany(Response::class);
+        return $this->hasMany(Response::class, 'session_id');
     }
 }
