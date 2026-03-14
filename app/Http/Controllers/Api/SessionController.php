@@ -199,7 +199,7 @@ class SessionController extends Controller
         $slides = $session->presentation
             ->slides()
             ->orderBy('order')
-            ->get(['id', 'order', 'layout', 'content']);
+            ->get(['id', 'order', 'type', 'category', 'content', 'settings']);
 
         return response()->json([
             'status' => true,
