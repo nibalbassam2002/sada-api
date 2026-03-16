@@ -15,6 +15,7 @@ Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallbac
 Route::get( 'sessions/{code}/info', [SessionController::class, 'info']);
 Route::post('sessions/join',        [SessionController::class, 'join']);
 Route::get( 'sessions/{id}/status', [SessionController::class, 'status']);
+Route::get('sessions/{id}/current-slide', [SessionController::class, 'currentSlide']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/presentations', [PresentationController::class, 'index']); // جلب القائمة

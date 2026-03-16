@@ -1,6 +1,4 @@
 <?php
-// app/Http/Controllers/Api/SessionController.php
-
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
@@ -199,7 +197,7 @@ class SessionController extends Controller
         $slides = $session->presentation
             ->slides()
             ->orderBy('order')
-            ->get(['id', 'order', 'type', 'category', 'content', 'settings']);
+            ->get(['id', 'order', 'layout', 'content']);
 
         return response()->json([
             'status' => true,
@@ -217,7 +215,6 @@ class SessionController extends Controller
             ],
         ]);
     }
-
     // المشارك يسأل: هل تغيرت الشريحة؟
     public function status($sessionId)
     {
@@ -234,7 +231,7 @@ class SessionController extends Controller
         ]);
     }
 
-    // الجلسة النشطة الحالية (للـ Editor/LobbyView)
+    // الجلسة النشطة الحالية 
     public function current($presentationId)
     {
         Presentation::where('user_id', auth()->id())->findOrFail($presentationId);
@@ -261,7 +258,25 @@ class SessionController extends Controller
         ]);
     }
 
-    // قائمة المشاركين (للـ LobbyView)
+    // المشارك يجلب بيانات الشريحة الحالية
+    public function currentSlide($sessionId)
+    {
+        $session = Session::findOrFail($sessionId);
+
+        if (!$session->current_slide_id) {
+            return response()->json(['status' => true, 'data' => null]);
+        }
+
+        $slide = $session->presentation
+            ->slides()
+            ->where('id', $session->current_slide_id)
+            ->first(['id', 'order', 'type', 'category', 'content', 'settings']);
+
+        return response()->json([
+            'status' => true,
+            'data'   => $slide,
+        ]);
+    }
     public function participants($sessionId)
     {
         $session = Session::whereHas('presentation', fn($q) =>
