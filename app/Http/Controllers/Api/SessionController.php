@@ -54,25 +54,27 @@ class SessionController extends Controller
         ]);
     }
 
-    // waiting - active (ابدأ العرض الفعلي)
-    public function launch($sessionId)
-    {
-        $session = Session::whereHas('presentation', fn($q) =>
-            $q->where('user_id', auth()->id())
-        )->where('id', $sessionId)
-         ->where('status', 'waiting')
-         ->firstOrFail();
+   public function launch($sessionId)
+{
+    $session = Session::whereHas('presentation', fn($q) =>
+        $q->where('user_id', auth()->id())
+    )->where('id', $sessionId)
+     ->whereIn('status', ['waiting', 'active'])  // ← غيّري هنا
+     ->firstOrFail();
 
+    // فقط لو waiting تحوّلها لـ active
+    if ($session->status === 'waiting') {
         $session->update([
             'status'     => 'active',
             'started_at' => now(),
         ]);
-
-        return response()->json([
-            'status' => true,
-            'data'   => ['status' => 'active'],
-        ]);
     }
+
+    return response()->json([
+        'status' => true,
+        'data'   => ['status' => $session->status],
+    ]);
+}
 
     // المقدم انتقل لشريحة جديدة
     public function changeSlide(Request $request, $sessionId)
