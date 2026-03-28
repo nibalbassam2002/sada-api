@@ -262,23 +262,31 @@ class SessionController extends Controller
 
     // المشارك يجلب بيانات الشريحة الحالية
     public function currentSlide($sessionId)
-    {
-        $session = Session::findOrFail($sessionId);
+{
+    $session = Session::findOrFail($sessionId);
 
-        if (!$session->current_slide_id) {
-            return response()->json(['status' => true, 'data' => null]);
-        }
-
-        $slide = $session->presentation
-            ->slides()
-            ->where('id', $session->current_slide_id)
-            ->first(['id', 'order', 'type', 'category', 'content', 'settings']);
-
+    if (!$session->current_slide_id) {
         return response()->json([
             'status' => true,
-            'data'   => $slide,
+            'data'   => ['slide' => null]
         ]);
     }
+
+    $slide = $session->presentation
+        ->slides()
+        ->where('id', $session->current_slide_id)
+        ->first(['id', 'order', 'type', 'category', 'content', 'settings', 'layout']);
+
+    // اندمج content مع id و layout زي ما بيعمل show()
+    $content = is_array($slide->content) ? $slide->content : [];
+    $content['id']     = $slide->id;
+    $content['layout'] = $slide->layout ?? $slide->type;
+
+    return response()->json([
+        'status' => true,
+        'data'   => ['slide' => $content]  // ✅ مهيكل صح
+    ]);
+}
     public function participants($sessionId)
     {
         $session = Session::whereHas('presentation', fn($q) =>
