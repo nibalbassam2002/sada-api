@@ -260,62 +260,67 @@ class SessionController extends Controller
         ]);
     }
 
-// ضع هذا الكود بدلاً من دالة currentSlide في SessionController.php
-
 public function currentSlide($sessionId)
 {
     $session = Session::findOrFail($sessionId);
-
+ 
     if (!$session->current_slide_id) {
         return response()->json([
             'status' => true,
             'data'   => ['slide' => null]
         ]);
     }
-
+ 
     $slide = $session->presentation
         ->slides()
         ->where('id', $session->current_slide_id)
         ->first();
-
+ 
     if (!$slide) {
         return response()->json([
             'status' => true,
             'data'   => ['slide' => null]
         ]);
     }
-
-    // content محفوظ كـ JSON في قاعدة البيانات
+ 
+    // ✅ فك الـ JSON
     $content = [];
     if (is_string($slide->content)) {
         $content = json_decode($slide->content, true) ?? [];
     } elseif (is_array($slide->content)) {
         $content = $slide->content;
     }
-
-    // دمج كل حقول الشريحة مع content
-    // هكذا SlideRenderer يحصل على كل البيانات التي يحتاجها
+ 
+    // ✅ دمج كل الحقول
     $slideData = array_merge($content, [
-        'id'     => $slide->id,
-        'layout' => $slide->layout ?? $slide->type ?? ($content['layout'] ?? 'BLANK'),
-        // حقول مباشرة من الـslide لو موجودة
-        'title'        => $content['title']        ?? $slide->title        ?? '',
-        'subtitle'     => $content['subtitle']     ?? $slide->subtitle     ?? '',
-        'content'      => $content['content']      ?? $slide->body         ?? '',
+        'id'           => $slide->id,
+        'layout'       => $content['layout']       ?? $slide->layout ?? $slide->type ?? 'BLANK',
+        'title'        => $content['title']        ?? '',
+        'subtitle'     => $content['subtitle']     ?? '',
+        'content'      => $content['content']      ?? '',
         'leftContent'  => $content['leftContent']  ?? '',
         'rightContent' => $content['rightContent'] ?? '',
         'images'       => $content['images']       ?? [],
         'shapes'       => $content['shapes']       ?? [],
         'tables'       => $content['tables']       ?? [],
+        'elements'     => $content['elements']     ?? [],
         'background'   => $content['background']   ?? null,
-        'titleStyle'   => $content['titleStyle']   ?? [],
-        'subtitleStyle'=> $content['subtitleStyle']?? [],
-        'contentStyle' => $content['contentStyle'] ?? [],
+        'titleStyle'   => $content['titleStyle']   ?? (object)[],
+        'subtitleStyle'=> $content['subtitleStyle']?? (object)[],
+        'contentStyle' => $content['contentStyle'] ?? (object)[],
+        'questionData' => $content['questionData'] ?? null,
+        'questionType' => $content['questionType'] ?? null,
     ]);
-
+ 
+    // ✅ template_id من الـ presentation (الثيم)
+    $templateId = $session->presentation->template_id ?? 0;
+ 
     return response()->json([
         'status' => true,
-        'data'   => ['slide' => $slideData]
+        'data'   => [
+            'slide'       => $slideData,
+            'template_id' => $templateId, // ← هذا ما يحتاجه DisplayPage
+        ]
     ]);
 }
     public function participants($sessionId)
