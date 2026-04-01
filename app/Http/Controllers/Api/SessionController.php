@@ -76,25 +76,37 @@ class SessionController extends Controller
     ]);
 }
 
-    // المقدم انتقل لشريحة جديدة
-    public function changeSlide(Request $request, $sessionId)
-    {
-        $request->validate([
-            'slide_id' => 'required|integer',
-        ]);
-
-        $session = Session::whereHas('presentation', fn($q) =>
-            $q->where('user_id', auth()->id())
-        )->where('id', $sessionId)
-         ->where('status', 'active')
-         ->firstOrFail();
-
-        $session->update([
-            'current_slide_id' => $request->slide_id,
-        ]);
-
-        return response()->json(['status' => true]);
+public function changeSlide(Request $request, $sessionId)
+{
+    $request->validate([
+        'slide_id'    => 'required|integer',
+        'slide'       => 'nullable|array',    // ✅ بيانات الشريحة الكاملة
+        'template_id' => 'nullable|integer',  // ✅ رقم الثيم
+    ]);
+ 
+    $session = Session::whereHas('presentation', fn($q) =>
+        $q->where('user_id', auth()->id())
+    )->where('id', $sessionId)
+     ->where('status', 'active')
+     ->firstOrFail();
+ 
+    // ✅ حدّث current_slide_id
+    $updateData = ['current_slide_id' => $request->slide_id];
+ 
+    // ✅ لو الـ frontend أرسل بيانات الشريحة، احفظها مؤقتاً في الـ session
+    if ($request->has('slide') && $request->slide) {
+        $updateData['current_slide_data'] = $request->slide;
     }
+ 
+    // ✅ لو أرسل template_id، احفظه في الـ presentation
+    if ($request->has('template_id')) {
+        $session->presentation->update(['template_id' => $request->template_id]);
+    }
+ 
+    $session->update($updateData);
+ 
+    return response()->json(['status' => true]);
+}
 
     // إنهاء الجلسة
     public function end($sessionId)
