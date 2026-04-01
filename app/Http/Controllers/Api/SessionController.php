@@ -260,8 +260,9 @@ class SessionController extends Controller
         ]);
     }
 
-    // المشارك يجلب بيانات الشريحة الحالية
-    public function currentSlide($sessionId)
+// ضع هذا الكود بدلاً من دالة currentSlide في SessionController.php
+
+public function currentSlide($sessionId)
 {
     $session = Session::findOrFail($sessionId);
 
@@ -275,16 +276,46 @@ class SessionController extends Controller
     $slide = $session->presentation
         ->slides()
         ->where('id', $session->current_slide_id)
-        ->first(['id', 'order', 'type', 'category', 'content', 'settings', 'layout']);
+        ->first();
 
-    // اندمج content مع id و layout زي ما بيعمل show()
-    $content = is_array($slide->content) ? $slide->content : [];
-    $content['id']     = $slide->id;
-    $content['layout'] = $slide->layout ?? $slide->type;
+    if (!$slide) {
+        return response()->json([
+            'status' => true,
+            'data'   => ['slide' => null]
+        ]);
+    }
+
+    // content محفوظ كـ JSON في قاعدة البيانات
+    $content = [];
+    if (is_string($slide->content)) {
+        $content = json_decode($slide->content, true) ?? [];
+    } elseif (is_array($slide->content)) {
+        $content = $slide->content;
+    }
+
+    // دمج كل حقول الشريحة مع content
+    // هكذا SlideRenderer يحصل على كل البيانات التي يحتاجها
+    $slideData = array_merge($content, [
+        'id'     => $slide->id,
+        'layout' => $slide->layout ?? $slide->type ?? ($content['layout'] ?? 'BLANK'),
+        // حقول مباشرة من الـslide لو موجودة
+        'title'        => $content['title']        ?? $slide->title        ?? '',
+        'subtitle'     => $content['subtitle']     ?? $slide->subtitle     ?? '',
+        'content'      => $content['content']      ?? $slide->body         ?? '',
+        'leftContent'  => $content['leftContent']  ?? '',
+        'rightContent' => $content['rightContent'] ?? '',
+        'images'       => $content['images']       ?? [],
+        'shapes'       => $content['shapes']       ?? [],
+        'tables'       => $content['tables']       ?? [],
+        'background'   => $content['background']   ?? null,
+        'titleStyle'   => $content['titleStyle']   ?? [],
+        'subtitleStyle'=> $content['subtitleStyle']?? [],
+        'contentStyle' => $content['contentStyle'] ?? [],
+    ]);
 
     return response()->json([
         'status' => true,
-        'data'   => ['slide' => $content]  // ✅ مهيكل صح
+        'data'   => ['slide' => $slideData]
     ]);
 }
     public function participants($sessionId)
