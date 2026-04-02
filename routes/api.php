@@ -16,7 +16,9 @@ Route::get( 'sessions/{code}/info', [SessionController::class, 'info']);
 Route::post('sessions/join',        [SessionController::class, 'join']);
 Route::get( 'sessions/{id}/status', [SessionController::class, 'status']);
 Route::get('sessions/{id}/current-slide', [SessionController::class, 'currentSlide']);
-
+// بدون auth — المشاركون مش مسجلين
+Route::post('sessions/{id}/answer', [SessionController::class, 'submitAnswer']);
+Route::get('sessions/{id}/results/{slideId}', [SessionController::class, 'slideResults']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/presentations', [PresentationController::class, 'index']); // جلب القائمة
     Route::post('/presentations', [PresentationController::class, 'store']);

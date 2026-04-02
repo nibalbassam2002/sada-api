@@ -354,4 +354,65 @@ public function currentSlide($sessionId)
             ],
         ]);
     }
+    public function submitAnswer(Request $request, $id)
+{
+    $data = $request->validate([
+        'slide_id'       => 'required|string',
+        'answer_index'   => 'nullable|integer',
+        'answer_value'   => 'nullable|string',
+        'device_token'   => 'required|string',
+        'time_taken'     => 'nullable|integer',
+    ]);
+
+    // إيجاد المشارك من device_token
+    $participant = \App\Models\Participant::where('session_id', $id)
+        ->where('device_token', $data['device_token'])
+        ->first();
+
+    if (!$participant) {
+        return response()->json(['status' => false, 'message' => 'Participant not found'], 404);
+    }
+
+    // منع التصويت مرتين
+    $exists = \App\Models\Response::where('session_id', $id)
+        ->where('slide_id', $data['slide_id'])
+        ->where('participant_id', $participant->id)
+        ->exists();
+
+    if ($exists) {
+        return response()->json(['status' => false, 'message' => 'Already answered'], 409);
+    }
+
+    $response = \App\Models\Response::create([
+        'session_id'     => $id,
+        'slide_id'       => $data['slide_id'],
+        'participant_id' => $participant->id,
+        'answer_index'   => $data['answer_index'] ?? null,
+        'answer_value'   => $data['answer_value'] ?? null,
+        'time_taken'     => $data['time_taken'] ?? 0,
+    ]);
+
+    return response()->json(['status' => true, 'data' => $response]);
+}
+
+public function slideResults($id, $slideId)
+{
+    $results = \App\Models\Response::where('session_id', $id)
+        ->where('slide_id', $slideId)
+        ->selectRaw('answer_index, COUNT(*) as count')
+        ->groupBy('answer_index')
+        ->get();
+
+    $total = \App\Models\Response::where('session_id', $id)
+        ->where('slide_id', $slideId)
+        ->count();
+
+    return response()->json([
+        'status' => true,
+        'data' => [
+            'results' => $results,
+            'total'   => $total,
+        ]
+    ]);
+}
 }
