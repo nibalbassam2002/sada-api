@@ -395,24 +395,127 @@ public function currentSlide($sessionId)
     return response()->json(['status' => true, 'data' => $response]);
 }
 
-public function slideResults($id, $slideId)
+public function revealResults(Request $request, $sessionId)
 {
-    $results = \App\Models\Response::where('session_id', $id)
+    $session = Session::whereHas('presentation', fn($q) =>
+        $q->where('user_id', auth()->id())
+    )->findOrFail($sessionId);
+ 
+    $session->update(['show_results' => true]);
+ 
+    return response()->json(['status' => true]);
+}
+ 
+public function hideResults(Request $request, $sessionId)
+{
+    $session = Session::whereHas('presentation', fn($q) =>
+        $q->where('user_id', auth()->id())
+    )->findOrFail($sessionId);
+ 
+    $session->update(['show_results' => false]);
+ 
+    return response()->json(['status' => true]);
+}
+ 
+public function slideResults($sessionId, $slideId)
+{
+    $session = Session::findOrFail($sessionId);
+ 
+    $results = \App\Models\Response::where('session_id', $sessionId)
         ->where('slide_id', $slideId)
         ->selectRaw('answer_index, COUNT(*) as count')
         ->groupBy('answer_index')
+        ->orderBy('answer_index')
         ->get();
-
-    $total = \App\Models\Response::where('session_id', $id)
+ 
+    $total = \App\Models\Response::where('session_id', $sessionId)
         ->where('slide_id', $slideId)
         ->count();
-
+ 
+    $correct = \App\Models\Response::where('session_id', $sessionId)
+        ->where('slide_id', $slideId)
+        ->where('is_correct', true)
+        ->count();
+ 
     return response()->json([
         'status' => true,
-        'data' => [
-            'results' => $results,
-            'total'   => $total,
+        'data'   => [
+            'results'          => $results,
+            'total_responses'  => $total,
+            'correct_count'    => $correct,
+            'incorrect_count'  => $total - $correct,
+            'correct_percent'  => $total > 0 ? round(($correct / $total) * 100) : 0,
+            'show_results'     => $session->show_results ?? false,
         ]
     ]);
 }
+ 
+// ── 4) تقرير كامل بعد انتهاء الجلسة ─────────────────────────
+public function generateReport($sessionId)
+{
+    $session = Session::whereHas('presentation', fn($q) =>
+        $q->where('user_id', auth()->id())
+    )->with('presentation')->findOrFail($sessionId);
+ 
+    $participants = $session->participants()->count();
+ 
+    // جلب كل الإجابات مع تجميعها
+    $allResponses = \App\Models\Response::where('session_id', $sessionId)
+        ->selectRaw('slide_id, answer_index, COUNT(*) as count, SUM(is_correct) as correct_count, AVG(time_taken) as avg_time')
+        ->groupBy('slide_id', 'answer_index')
+        ->get();
+ 
+    // تجميع البيانات لكل شريحة
+    $slideStats = [];
+    foreach ($allResponses as $r) {
+        $sid = $r->slide_id;
+        if (!isset($slideStats[$sid])) {
+            $slideStats[$sid] = [
+                'slide_id'      => $sid,
+                'total'         => 0,
+                'correct'       => 0,
+                'options'       => [],
+                'avg_time'      => 0,
+            ];
+        }
+        $slideStats[$sid]['total']         += $r->count;
+        $slideStats[$sid]['correct']       += $r->correct_count;
+        $slideStats[$sid]['avg_time']       = round($r->avg_time, 1);
+        $slideStats[$sid]['options'][]      = [
+            'index' => $r->answer_index,
+            'count' => $r->count,
+        ];
+    }
+ 
+    // إجمالي النقاط لكل مشارك
+    $leaderboard = \App\Models\Response::where('session_id', $sessionId)
+        ->join('participants', 'responses.participant_id', '=', 'participants.id')
+        ->selectRaw('participants.nickname, SUM(responses.points) as total_points, SUM(responses.is_correct) as correct_answers')
+        ->groupBy('participants.id', 'participants.nickname')
+        ->orderByDesc('total_points')
+        ->limit(20)
+        ->get();
+ 
+    $report = [
+        'session_id'        => $sessionId,
+        'presentation_title'=> $session->presentation->title,
+        'total_participants'=> $participants,
+        'total_questions'   => count($slideStats),
+        'slide_stats'       => array_values($slideStats),
+        'leaderboard'       => $leaderboard,
+        'generated_at'      => now()->toDateTimeString(),
+    ];
+ 
+    // حفظ في جدول reports
+    \App\Models\Report::updateOrCreate(
+        ['session_id' => $sessionId],
+        ['total_participants' => $participants, 'summary_data' => $report]
+    );
+ 
+    return response()->json([
+        'status' => true,
+        'data'   => $report,
+    ]);
+}
+ 
 }

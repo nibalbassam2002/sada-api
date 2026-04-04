@@ -19,6 +19,7 @@ Route::get('sessions/{id}/current-slide', [SessionController::class, 'currentSli
 // بدون auth — المشاركون مش مسجلين
 Route::post('sessions/{id}/answer', [SessionController::class, 'submitAnswer']);
 Route::get('sessions/{id}/results/{slideId}', [SessionController::class, 'slideResults']);
+Route::get('sessions/{id}/slide-results/{slideId}', [SessionController::class, 'slideResults']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/presentations', [PresentationController::class, 'index']); // جلب القائمة
     Route::post('/presentations', [PresentationController::class, 'store']);
@@ -36,6 +37,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('sessions/{id}/slide',  [SessionController::class, 'changeSlide']);
     Route::post('sessions/{id}/end',  [SessionController::class, 'end']);
     Route::get( 'sessions/{id}/participants', [SessionController::class, 'participants']);
+    Route::post('sessions/{id}/reveal-results', [SessionController::class, 'revealResults']);
+    Route::post('sessions/{id}/hide-results',   [SessionController::class, 'hideResults']);
+    Route::get('sessions/{id}/report',          [SessionController::class, 'generateReport']);
 });
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
