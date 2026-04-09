@@ -80,31 +80,41 @@ public function changeSlide(Request $request, $sessionId)
 {
     $request->validate([
         'slide_id'    => 'required|integer',
-        'slide'       => 'nullable|array',    // ✅ بيانات الشريحة الكاملة
-        'template_id' => 'nullable|integer',  // ✅ رقم الثيم
+        'slide'       => 'nullable|array',
+        'template_id' => 'nullable|integer',
     ]);
- 
+
     $session = Session::whereHas('presentation', fn($q) =>
         $q->where('user_id', auth()->id())
     )->where('id', $sessionId)
      ->where('status', 'active')
      ->firstOrFail();
- 
-    // ✅ حدّث current_slide_id
+
     $updateData = ['current_slide_id' => $request->slide_id];
- 
-    // ✅ لو الـ frontend أرسل بيانات الشريحة، احفظها مؤقتاً في الـ session
+
     if ($request->has('slide') && $request->slide) {
         $updateData['current_slide_data'] = $request->slide;
+
+        $layout       = $request->slide['layout']       ?? null;
+        $questionData = $request->slide['questionData'] ?? null;
+        $timer        = $questionData['timer']          ?? null;
+
+        if ($layout === 'QUESTION' && $timer) {
+            // ✅ سؤال جديد — ابدأ العداد
+            $updateData['timer_duration']   = (int) $timer;
+            $updateData['timer_started_at'] = now();
+        } else {
+            // ✅ شريحة عادية — امسح العداد
+            $updateData['timer_duration']   = null;
+            $updateData['timer_started_at'] = null;
+        }
     }
- 
-    // ✅ لو أرسل template_id، احفظه في الـ presentation
+
     if ($request->has('template_id')) {
         $session->presentation->update(['template_id' => $request->template_id]);
     }
- 
+
     $session->update($updateData);
- 
     return response()->json(['status' => true]);
 }
 
@@ -272,66 +282,67 @@ public function changeSlide(Request $request, $sessionId)
         ]);
     }
 
-public function currentSlide($sessionId)
+    public function currentSlide($sessionId)
 {
     $session = Session::findOrFail($sessionId);
- 
+
     if (!$session->current_slide_id) {
-        return response()->json([
-            'status' => true,
-            'data'   => ['slide' => null]
-        ]);
+        return response()->json(['status' => true, 'data' => ['slide' => null]]);
     }
- 
+
     $slide = $session->presentation
         ->slides()
         ->where('id', $session->current_slide_id)
         ->first();
- 
+
     if (!$slide) {
-        return response()->json([
-            'status' => true,
-            'data'   => ['slide' => null]
-        ]);
+        return response()->json(['status' => true, 'data' => ['slide' => null]]);
     }
- 
-    // ✅ فك الـ JSON
-    $content = [];
-    if (is_string($slide->content)) {
-        $content = json_decode($slide->content, true) ?? [];
-    } elseif (is_array($slide->content)) {
-        $content = $slide->content;
-    }
- 
-    // ✅ دمج كل الحقول
+
+    $content = is_string($slide->content)
+        ? (json_decode($slide->content, true) ?? [])
+        : ($slide->content ?? []);
+
     $slideData = array_merge($content, [
         'id'           => $slide->id,
-        'layout'       => $content['layout']       ?? $slide->layout ?? $slide->type ?? 'BLANK',
-        'title'        => $content['title']        ?? '',
-        'subtitle'     => $content['subtitle']     ?? '',
-        'content'      => $content['content']      ?? '',
-        'leftContent'  => $content['leftContent']  ?? '',
-        'rightContent' => $content['rightContent'] ?? '',
-        'images'       => $content['images']       ?? [],
-        'shapes'       => $content['shapes']       ?? [],
-        'tables'       => $content['tables']       ?? [],
-        'elements'     => $content['elements']     ?? [],
-        'background'   => $content['background']   ?? null,
-        'titleStyle'   => $content['titleStyle']   ?? (object)[],
-        'subtitleStyle'=> $content['subtitleStyle']?? (object)[],
-        'contentStyle' => $content['contentStyle'] ?? (object)[],
-        'questionData' => $content['questionData'] ?? null,
-        'questionType' => $content['questionType'] ?? null,
+        'layout'       => $content['layout']        ?? $slide->type ?? 'BLANK',
+        'title'        => $content['title']         ?? '',
+        'subtitle'     => $content['subtitle']      ?? '',
+        'content'      => $content['content']       ?? '',
+        'leftContent'  => $content['leftContent']   ?? '',
+        'rightContent' => $content['rightContent']  ?? '',
+        'images'       => $content['images']        ?? [],
+        'shapes'       => $content['shapes']        ?? [],
+        'tables'       => $content['tables']        ?? [],
+        'elements'     => $content['elements']      ?? [],
+        'background'   => $content['background']    ?? null,
+        'titleStyle'   => $content['titleStyle']    ?? (object)[],
+        'subtitleStyle'=> $content['subtitleStyle'] ?? (object)[],
+        'contentStyle' => $content['contentStyle']  ?? (object)[],
+        'questionData' => $content['questionData']  ?? null,
+        'questionType' => $content['questionType']  ?? null,
     ]);
- 
-    // ✅ template_id من الـ presentation (الثيم)
-    $templateId = $session->presentation->template_id ?? 0;
- 
+
+    // ✅ احسب الوقت المتبقي من السيرفر
+    $timerInfo = null;
+    if ($session->timer_started_at && $session->timer_duration) {
+        $elapsed   = now()->diffInSeconds($session->timer_started_at);
+        $remaining = max(0, $session->timer_duration - $elapsed);
+
+        $timerInfo = [
+            'duration'          => $session->timer_duration,
+            'started_at'        => (string) $session->timer_started_at,
+            'seconds_remaining' => (int) $remaining,
+            'is_expired'        => $remaining <= 0,
+        ];
+    }
+
     return response()->json([
         'status' => true,
         'data'   => [
             'slide'       => $slideData,
-            'template_id' => $templateId, // ← هذا ما يحتاجه DisplayPage
+            'template_id' => $session->presentation->template_id ?? 0,
+            'timer'       => $timerInfo, // ✅ هذا الجديد
         ]
     ]);
 }
