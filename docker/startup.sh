@@ -12,6 +12,7 @@ php artisan cache:clear
 # نستخدم --force لأننا في وضع الإنتاج
 echo "Running migrations..."
 php artisan migrate --force
+php artisan storage:link 2>/dev/null || true
 
 # ======================================================
 # 4. تشغيل السيدر (الإضافة الجديدة)
