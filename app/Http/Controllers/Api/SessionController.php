@@ -92,6 +92,7 @@ public function changeSlide(Request $request, $sessionId)
 
     $updateData = ['current_slide_id' => $request->slide_id];
 
+   
     if ($request->has('slide') && $request->slide) {
         $updateData['current_slide_data'] = $request->slide;
 
@@ -99,12 +100,13 @@ public function changeSlide(Request $request, $sessionId)
         $questionData = $request->slide['questionData'] ?? null;
         $timer        = $questionData['timer']          ?? null;
 
-        if ($layout === 'QUESTION' && $timer) {
-            // ✅ سؤال جديد — ابدأ العداد
+        // تعديل الشرط هنا ليشمل أي شريحة بها بيانات سؤال
+        $isQ = ($layout === 'QUESTION' || !empty($questionData));
+
+        if ($isQ && $timer) {
             $updateData['timer_duration']   = (int) $timer;
             $updateData['timer_started_at'] = now();
         } else {
-            // ✅ شريحة عادية — امسح العداد
             $updateData['timer_duration']   = null;
             $updateData['timer_started_at'] = null;
         }
