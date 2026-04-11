@@ -331,7 +331,9 @@ public function changeSlide(Request $request, $sessionId)
 
         $timerInfo = [
             'duration'          => $session->timer_duration,
-            'started_at'        => (string) $session->timer_started_at,
+            'started_at' => $session->timer_started_at 
+    ? $session->timer_started_at->toISOString() 
+    : null,
             'seconds_remaining' => (int) $remaining,
             'is_expired'        => $remaining <= 0,
         ];
