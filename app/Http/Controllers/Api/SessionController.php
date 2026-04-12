@@ -108,9 +108,11 @@ public function changeSlide(Request $request, $sessionId)
         if ($isQ && $timer) {
             $updateData['timer_duration']   = (int) $timer;
             $updateData['timer_started_at'] = now();
+            $updateData['timer_expired']    = false;
         } else {
             $updateData['timer_duration']   = null;
             $updateData['timer_started_at'] = null;
+            $updateData['timer_expired']    = false;
         }
     }
 
@@ -338,18 +340,17 @@ public function changeSlide(Request $request, $sessionId)
     // ✅ احسب الوقت المتبقي من السيرفر
     $timerInfo = null;
     if ($session->timer_started_at && $session->timer_duration) {
-        $elapsed   = now()->diffInSeconds($session->timer_started_at);
-        $remaining = max(0, $session->timer_duration - $elapsed);
+    $elapsed   = now()->diffInSeconds($session->timer_started_at);
+    $remaining = max(0, $session->timer_duration - $elapsed);
+    $isExpired = $session->timer_expired || $remaining <= 0;
 
         $timerInfo = [
-            'duration'          => $session->timer_duration,
-            'started_at' => $session->timer_started_at 
-                ? $session->timer_started_at->toISOString() 
-                : null,
-            'seconds_remaining' => (int) $remaining,
-            'is_expired'        => $remaining <= 0,
-        ];
-    }
+        'duration'          => $session->timer_duration,
+        'started_at'        => $session->timer_started_at->toISOString(),
+        'seconds_remaining' => (int) $remaining,
+        'is_expired'        => $isExpired, // ✅
+    ];
+}
 
     return response()->json([
         'status' => true,
@@ -359,6 +360,12 @@ public function changeSlide(Request $request, $sessionId)
             'timer'       => $timerInfo, // ✅ هذا الجديد
         ]
     ]);
+}
+public function expireTimer($sessionId)
+{
+    $session = Session::findOrFail($sessionId);
+    $session->update(['timer_expired' => true]);
+    return response()->json(['status' => true]);
 }
     public function participants($sessionId)
     {

@@ -18,13 +18,14 @@ class Session extends Model
         'presentation_id', 'access_code', 'status',
         'current_slide_id', 'is_voting_open', 'show_results',
         'timer_duration', 'timer_started_at', 'session_settings',
-        'started_at', 'ended_at',
+        'started_at', 'ended_at','timer_expired',
     ];
 
     protected $casts = [
         'session_settings' => 'array',
         'is_voting_open'   => 'boolean',
         'show_results'     => 'boolean',
+        'timer_expired'    => 'boolean',
         'started_at'       => 'datetime',
         'ended_at'         => 'datetime',
         'timer_started_at' => 'datetime',

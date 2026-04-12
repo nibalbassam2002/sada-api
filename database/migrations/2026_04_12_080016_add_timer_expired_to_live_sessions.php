@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('live_sessions', function (Blueprint $table) {
-            //
+            $table->boolean('timer_expired')->default(false)->after('timer_started_at');
         });
     }
 
@@ -22,7 +22,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('live_sessions', function (Blueprint $table) {
-            //
+            $table->dropColumn('timer_expired');
         });
     }
 };
