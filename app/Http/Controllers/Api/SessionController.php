@@ -105,15 +105,6 @@ public function changeSlide(Request $request, $sessionId)
 
         $isQ = ($layout === 'QUESTION' || !empty($questionData));
 
-        // ✅ DEBUG - سيظهر في logs
-        \Log::info('changeSlide DEBUG', [
-            'layout'       => $layout,
-            'isQ'          => $isQ,
-            'timer'        => $timer,
-            'has_qData'    => !empty($questionData),
-            'qData_keys'   => is_array($questionData) ? array_keys($questionData) : 'NOT ARRAY',
-        ]);
-
         if ($isQ && $timer) {
             $updateData['timer_duration']   = (int) $timer;
             $updateData['timer_started_at'] = now();
