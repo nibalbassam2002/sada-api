@@ -54,7 +54,7 @@ class PresentationController extends Controller
 
         $presentation = Presentation::create([
             'user_id'     => auth()->id(),
-            'template_id' => $request->template_id,
+            'template_id' => $request->template_id ?: null, 
             'title'       => $request->title,
             'status'      => 'draft'
         ]);
@@ -126,48 +126,60 @@ class PresentationController extends Controller
     }
 
     public function syncSlides(Request $request, $id)
-    {
-        $presentation = Presentation::where('user_id', auth()->id())->findOrFail($id);
+{
+    $presentation = Presentation::where('user_id', auth()->id())->findOrFail($id);
 
-        // ✅ تحديث العنوان والثيم معاً
-        $updateData = [];
-        if ($request->has('title')) {
-            $updateData['title'] = $request->title;
-        }
-        if ($request->has('template_id')) {
-            $updateData['template_id'] = $request->template_id; // ✅ حفظ الثيم
-        }
-        if (!empty($updateData)) {
-            $presentation->update($updateData);
-        }
-
-        $incomingSlides = $request->input('slides', []);
-        $keptSlideIds   = [];
-
-        foreach ($incomingSlides as $index => $slideData) {
-            $slide = $presentation->slides()->updateOrCreate(
-                ['id' => $slideData['id'] ?? null],
-                [
-                    'order'    => $index + 1,
-                    'layout'   => $slideData['layout']       ?? 'Blank',
-                    'category' => $slideData['category']     ?? 'content',
-                    'type'     => $slideData['questionType'] ?? 'content',
-                    'content'  => $slideData,
-                    'settings' => $slideData['settings']     ?? [],
-                ]
-            );
-            $keptSlideIds[] = $slide->id;
-        }
-
-        // حذف الشرائح المحذوفة
-        $presentation->slides()->whereNotIn('id', $keptSlideIds)->delete();
-
-        return response()->json([
-            'status'  => true,
-            'message' => 'Presentation synced successfully',
-            'data'    => $presentation->load('slides')
-        ]);
+    // ✅ تحديث العنوان والثيم معاً
+    $updateData = [];
+    if ($request->has('title')) {
+        $updateData['title'] = $request->title;
     }
+    
+    if ($request->has('template_id')) {
+        // 🔥 التحويل الذكي: 
+        // - لو الرقم 0 أو '0' → يصير null (بدون قالب)
+        // - لو الرقم موجود وفعلي → يخليه كما هو (مع قالب)
+        $templateId = $request->template_id;
+        
+        if ($templateId === 0 || $templateId === '0') {
+            $templateId = null;  // بدون قالب ✅
+        }
+        // أي رقم ثاني (1,2,3,5,...) يضل كما هو ✅
+        
+        $updateData['template_id'] = $templateId;
+    }
+    
+    if (!empty($updateData)) {
+        $presentation->update($updateData);
+    }
+
+    $incomingSlides = $request->input('slides', []);
+    $keptSlideIds   = [];
+
+    foreach ($incomingSlides as $index => $slideData) {
+        $slide = $presentation->slides()->updateOrCreate(
+            ['id' => $slideData['id'] ?? null],
+            [
+                'order'    => $index + 1,
+                'layout'   => $slideData['layout']       ?? 'Blank',
+                'category' => $slideData['category']     ?? 'content',
+                'type'     => $slideData['questionType'] ?? 'content',
+                'content'  => $slideData,
+                'settings' => $slideData['settings']     ?? [],
+            ]
+        );
+        $keptSlideIds[] = $slide->id;
+    }
+
+    // حذف الشرائح المحذوفة
+    $presentation->slides()->whereNotIn('id', $keptSlideIds)->delete();
+
+    return response()->json([
+        'status'  => true,
+        'message' => 'Presentation synced successfully',
+        'data'    => $presentation->load('slides')
+    ]);
+}
 
     public function update(Request $request, $id)
     {
