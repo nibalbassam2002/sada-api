@@ -92,16 +92,27 @@ public function changeSlide(Request $request, $sessionId)
 
     $updateData = ['current_slide_id' => $request->slide_id];
 
-   
     if ($request->has('slide') && $request->slide) {
         $updateData['current_slide_data'] = $request->slide;
 
         $layout       = $request->slide['layout']       ?? null;
         $questionData = $request->slide['questionData'] ?? null;
-        $timer        = $questionData['timer']          ?? null;
+        $timer        = null;
+        
+        if (is_array($questionData)) {
+            $timer = $questionData['timer'] ?? null;
+        }
 
-        // تعديل الشرط هنا ليشمل أي شريحة بها بيانات سؤال
         $isQ = ($layout === 'QUESTION' || !empty($questionData));
+
+        // ✅ DEBUG - سيظهر في logs
+        \Log::info('changeSlide DEBUG', [
+            'layout'       => $layout,
+            'isQ'          => $isQ,
+            'timer'        => $timer,
+            'has_qData'    => !empty($questionData),
+            'qData_keys'   => is_array($questionData) ? array_keys($questionData) : 'NOT ARRAY',
+        ]);
 
         if ($isQ && $timer) {
             $updateData['timer_duration']   = (int) $timer;
@@ -117,7 +128,15 @@ public function changeSlide(Request $request, $sessionId)
     }
 
     $session->update($updateData);
-    return response()->json(['status' => true]);
+    
+    // ✅ أرجعي timer في response مباشرة
+    return response()->json([
+        'status' => true,
+        'data'   => [
+            'timer_duration'   => $session->fresh()->timer_duration,
+            'timer_started_at' => $session->fresh()->timer_started_at,
+        ]
+    ]);
 }
 
     // إنهاء الجلسة
@@ -334,8 +353,8 @@ public function changeSlide(Request $request, $sessionId)
         $timerInfo = [
             'duration'          => $session->timer_duration,
             'started_at' => $session->timer_started_at 
-    ? $session->timer_started_at->toISOString() 
-    : null,
+                ? $session->timer_started_at->toISOString() 
+                : null,
             'seconds_remaining' => (int) $remaining,
             'is_expired'        => $remaining <= 0,
         ];
