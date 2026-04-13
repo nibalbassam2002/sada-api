@@ -132,27 +132,30 @@ public function changeSlide(Request $request, $sessionId)
     ]);
 }
 
-    // إنهاء الجلسة
-    public function end($sessionId)
-    {
-        $session = Session::whereHas('presentation', fn($q) =>
-            $q->where('user_id', auth()->id())
-        )->where('id', $sessionId)
-         ->whereIn('status', ['waiting', 'active'])
-         ->firstOrFail();
+  public function end($sessionId)
+{
+    $session = Session::whereHas('presentation', fn($q) =>
+        $q->where('user_id', auth()->id())
+    )->where('id', $sessionId)
+     ->firstOrFail(); // ← احذف شرط الـ status
 
-        $session->update([
-            'status'   => 'finished',
-            'ended_at' => now(),
-        ]);
-
-        return response()->json([
-            'status' => true,
-            'data'   => [
-                'participants_count' => $session->participants()->count(),
-            ],
-        ]);
+    // لو خلصت مسبقاً، رجعي success بدون error
+    if ($session->status === 'finished') {
+        return response()->json(['status' => true, 'data' => ['already_ended' => true]]);
     }
+
+    $session->update([
+        'status'   => 'finished',
+        'ended_at' => now(),
+    ]);
+
+    return response()->json([
+        'status' => true,
+        'data'   => [
+            'participants_count' => $session->participants()->count(),
+        ],
+    ]);
+}
 
     // التحقق من الكود قبل الانضمام
     public function info($code)
