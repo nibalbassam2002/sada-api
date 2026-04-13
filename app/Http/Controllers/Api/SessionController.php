@@ -87,7 +87,7 @@ public function changeSlide(Request $request, $sessionId)
     $session = Session::whereHas('presentation', fn($q) =>
         $q->where('user_id', auth()->id())
     )->where('id', $sessionId)
-     ->where('status', 'active')
+     ->whereIn('status', ['waiting', 'active'])
      ->firstOrFail();
 
     $updateData = ['current_slide_id' => $request->slide_id];
