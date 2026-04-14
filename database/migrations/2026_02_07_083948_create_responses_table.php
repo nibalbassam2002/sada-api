@@ -13,11 +13,14 @@ return new class extends Migration
     {
         Schema::create('responses', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('session_id')->constrained('live_sessions')->onDelete('cascade');
-            $table->foreignId('slide_id')->constrained()->onDelete('cascade');
+             $table->foreignId('session_id')->constrained('live_sessions')->onDelete('cascade');
+            $table->string('slide_id');          // ← string مش foreign key
             $table->foreignId('participant_id')->constrained()->onDelete('cascade');
-            $table->foreignId('option_id')->nullable()->constrained('slide_options'); 
-            $table->text('answer_value')->nullable();
+            $table->integer('answer_index')->nullable();   // رقم الخيار (0,1,2,3)
+            $table->string('answer_value')->nullable();    // نص الإجابة
+            $table->boolean('is_correct')->default(false);
+            $table->integer('time_taken')->default(0);     // كم ثانية أخذ للإجابة
+            $table->integer('points')->default(0);
             $table->timestamps();
         });
     }

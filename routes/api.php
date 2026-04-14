@@ -22,6 +22,7 @@ Route::post('sessions/{id}/answer', [SessionController::class, 'submitAnswer']);
 Route::get('sessions/{id}/results/{slideId}', [SessionController::class, 'slideResults']);
 Route::get('sessions/{id}/slide-results/{slideId}', [SessionController::class, 'slideResults']);
 Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/presentations/import-pptx', [PresentationController::class, 'importPptx']);
     Route::get('/presentations', [PresentationController::class, 'index']); // جلب القائمة
     Route::post('/presentations', [PresentationController::class, 'store']);
     Route::get('/presentations/{id}', [PresentationController::class, 'show']);

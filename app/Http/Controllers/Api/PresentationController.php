@@ -253,4 +253,150 @@ class PresentationController extends Controller
 
         return response()->json(['status' => true, 'message' => 'Deleted successfully']);
     }
+    public function importPptx(Request $request)
+{
+    $request->validate([
+        'file'  => 'required|file|mimes:pptx,zip|max:20480',
+        'title' => 'nullable|string|max:255',
+    ]);
+
+    $file     = $request->file('file');
+    $title    = $request->input('title') ?: $file->getClientOriginalName();
+    $path     = $file->store('temp_pptx', 'local');
+    $fullPath = storage_path('app/' . $path);
+
+    try {
+        $reader       = \PhpOffice\PhpPresentation\IOFactory::createReader('PowerPoint2007');
+        $presentation = $reader->load($fullPath);
+
+        $newPresentation = \App\Models\Presentation::create([
+            'user_id'     => auth()->id(),
+            'title'       => $title,
+            'template_id' => null,
+            'status'      => 'draft',
+        ]);
+
+        foreach ($presentation->getAllSlides() as $index => $slide) {
+            $content = $this->extractSlideContent($slide);
+            $newPresentation->slides()->create([
+                'order'    => $index + 1,
+                'category' => 'content',
+                'type'     => 'imported',
+                'content'  => $content,
+                'settings' => [],
+            ]);
+        }
+
+        \Storage::disk('local')->delete($path);
+
+        return response()->json([
+            'status'  => true,
+            'message' => 'PowerPoint imported successfully',
+            'data'    => $newPresentation->load('slides'),
+        ], 201);
+
+    } catch (\Exception $e) {
+        \Storage::disk('local')->delete($path);
+        return response()->json([
+            'status'  => false,
+            'message' => 'Failed to parse file: ' . $e->getMessage(),
+        ], 422);
+    }
+}
+
+private function extractSlideContent($slide): array
+{
+    $title    = '';
+    $subtitle = '';
+    $content  = '';
+    $images   = [];
+    $shapes   = [];
+
+    foreach ($slide->getShapeCollection() as $shape) {
+
+        // ── نصوص ──────────────────────────────────────
+        if ($shape instanceof \PhpOffice\PhpPresentation\Shape\RichText) {
+            $text      = '';
+            $fontSize  = 24;
+            $color     = '#1e293b';
+            $fontWeight = 'normal';
+
+            foreach ($shape->getParagraphs() as $para) {
+                foreach ($para->getRichTextElements() as $el) {
+                    $text .= $el->getText();
+
+                    // استخراج الخط واللون
+                    $font = $el->getFont();
+                    if ($font) {
+                        $fontSize   = $font->getSize()   ?: $fontSize;
+                        $fontWeight = $font->isBold()    ? 'bold' : 'normal';
+                        $clr        = $font->getColor();
+                        if ($clr && $clr->getRGB() !== '000000') {
+                            $color = '#' . $clr->getRGB();
+                        }
+                    }
+                }
+                $text .= "\n";
+            }
+            $text = trim($text);
+            if (!$text) continue;
+
+            // تحديد نوع النص حسب الحجم
+            if (empty($title) || $fontSize >= 28) {
+                $title = $text;
+            } elseif (empty($subtitle) || $fontSize >= 18) {
+                $subtitle = $text;
+            } else {
+                $content .= $text . "\n";
+            }
+        }
+
+        // ── صور ───────────────────────────────────────
+        if ($shape instanceof \PhpOffice\PhpPresentation\Shape\Drawing\Gd) {
+            ob_start();
+            imagepng($shape->getImage());
+            $imgData = ob_get_clean();
+            $images[] = [
+                'id'     => uniqid('img_'),
+                'src'    => 'data:image/png;base64,' . base64_encode($imgData),
+                'x'      => $shape->getOffsetX(),
+                'y'      => $shape->getOffsetY(),
+                'width'  => $shape->getWidth(),
+                'height' => $shape->getHeight(),
+            ];
+        }
+
+        // ── أشكال (مستطيلات، دوائر، إلخ) ────────────
+        if ($shape instanceof \PhpOffice\PhpPresentation\Shape\AutoShape) {
+            $fill  = $shape->getFill();
+            $color = '#e2e8f0';
+            if ($fill && $fill->getFillType() !== \PhpOffice\PhpPresentation\Style\Fill::FILL_NONE) {
+                $clr = $fill->getStartColor();
+                if ($clr) $color = '#' . $clr->getRGB();
+            }
+            $shapes[] = [
+                'id'     => uniqid('shape_'),
+                'type'   => 'rect',
+                'x'      => $shape->getOffsetX(),
+                'y'      => $shape->getOffsetY(),
+                'width'  => $shape->getWidth(),
+                'height' => $shape->getHeight(),
+                'fill'   => $color,
+            ];
+        }
+    }
+
+    return [
+        'layout'       => 'Title and Content',
+        'title'        => $title,
+        'subtitle'     => $subtitle,
+        'content'      => trim($content),
+        'images'       => $images,
+        'shapes'       => $shapes,
+        'tables'       => [],
+        'titleStyle'   => ['fontFamily' => 'Calibri', 'fontSize' => 48],
+        'subtitleStyle' => ['fontFamily' => 'Calibri', 'fontSize' => 24],
+        'contentStyle' => ['fontFamily' => 'Calibri', 'fontSize' => 18],
+    ];
+}
 }
