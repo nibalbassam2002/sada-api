@@ -260,20 +260,31 @@ public function importPptx(Request $request)
         'title' => 'nullable|string|max:255',
     ]);
 
-    $file  = $request->file('file');
-    $title = $request->input('title') ?: $file->getClientOriginalName();
-
-    // ✅ احفظ في tmp مباشرة وتحقق إنه موجود
-    $tmpPath = tempnam(sys_get_temp_dir(), 'pptx_') . '.pptx';
-    copy($file->getRealPath(), $tmpPath);
-
-    if (!file_exists($tmpPath)) {
-        return response()->json(['status' => false, 'message' => 'File could not be saved'], 422);
-    }
+    $file     = $request->file('file');
+    $title    = $request->input('title') ?: str_replace('.pptx', '', $file->getClientOriginalName());
+    $tmpDir   = sys_get_temp_dir() . '/' . uniqid('pptx_');
+    mkdir($tmpDir);
+    $pptxPath = $tmpDir . '/presentation.pptx';
+    copy($file->getRealPath(), $pptxPath);
 
     try {
-        $reader       = \PhpOffice\PhpPresentation\IOFactory::createReader('PowerPoint2007');
-        $presentation = $reader->load($tmpPath);
+        // فتح الـ PPTX كـ ZIP
+        $zip = new \ZipArchive();
+        if ($zip->open($pptxPath) !== true) {
+            throw new \Exception('Cannot open PPTX file');
+        }
+
+        // استخراج كل الملفات
+        $zip->extractTo($tmpDir . '/extracted');
+        $zip->close();
+
+        $extractDir = $tmpDir . '/extracted';
+
+        // قراءة عدد الشرائح من presentation.xml
+        $presXml = simplexml_load_file($extractDir . '/ppt/presentation.xml');
+        $presXml->registerXPathNamespace('p', 'http://schemas.openxmlformats.org/presentationml/2006/main');
+        $slideNodes = $presXml->xpath('//p:sldIdLst/p:sldId');
+        $slideCount = count($slideNodes);
 
         $newPresentation = \App\Models\Presentation::create([
             'user_id'     => auth()->id(),
@@ -282,10 +293,14 @@ public function importPptx(Request $request)
             'status'      => 'draft',
         ]);
 
-        foreach ($presentation->getAllSlides() as $index => $slide) {
-            $content = $this->extractSlideContent($slide);
+        for ($i = 1; $i <= $slideCount; $i++) {
+            $slideFile = $extractDir . "/ppt/slides/slide{$i}.xml";
+            if (!file_exists($slideFile)) continue;
+
+            $content = $this->parseSlideXml($slideFile, $extractDir, $i);
+
             $newPresentation->slides()->create([
-                'order'    => $index + 1,
+                'order'    => $i,
                 'category' => 'content',
                 'type'     => 'imported',
                 'content'  => $content,
@@ -293,7 +308,8 @@ public function importPptx(Request $request)
             ]);
         }
 
-        @unlink($tmpPath); // حذف الملف المؤقت
+        // تنظيف
+        $this->deleteDir($tmpDir);
 
         return response()->json([
             'status'  => true,
@@ -302,7 +318,7 @@ public function importPptx(Request $request)
         ], 201);
 
     } catch (\Exception $e) {
-        @unlink($tmpPath);
+        $this->deleteDir($tmpDir);
         return response()->json([
             'status'  => false,
             'message' => $e->getMessage(),
@@ -312,99 +328,164 @@ public function importPptx(Request $request)
     }
 }
 
-private function extractSlideContent($slide): array
+private function parseSlideXml($slideFile, $extractDir, $slideIndex): array
 {
+    $xml = simplexml_load_file($slideFile);
+
+    // تسجيل namespaces
+    $namespaces = [
+        'a'   => 'http://schemas.openxmlformats.org/drawingml/2006/main',
+        'p'   => 'http://schemas.openxmlformats.org/presentationml/2006/main',
+        'r'   => 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+        'xdr' => 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing',
+    ];
+
+    foreach ($namespaces as $prefix => $uri) {
+        $xml->registerXPathNamespace($prefix, $uri);
+    }
+
     $title    = '';
     $subtitle = '';
     $content  = '';
     $images   = [];
-    $shapes   = [];
+    $bgColor  = '#ffffff';
 
-    foreach ($slide->getShapeCollection() as $shape) {
+    // ── استخراج لون الخلفية ─────────────────────
+    $bgNodes = $xml->xpath('//p:bg//a:solidFill/a:srgbClr');
+    if (!empty($bgNodes)) {
+        $bgColor = '#' . (string)$bgNodes[0]['val'];
+    }
 
-        // ── نصوص ──────────────────────────────────────
-        if ($shape instanceof \PhpOffice\PhpPresentation\Shape\RichText) {
-            $text      = '';
-            $fontSize  = 24;
-            $color     = '#1e293b';
-            $fontWeight = 'normal';
+    // ── استخراج الخلفية من slideLayout أو slideMaster ──
+    $slideLayoutBg = $this->getSlideBackground($extractDir, $slideIndex);
 
-            foreach ($shape->getParagraphs() as $para) {
-                foreach ($para->getRichTextElements() as $el) {
-                    $text .= $el->getText();
+    // ── استخراج النصوص مع مواضعها ────────────────
+    $spNodes = $xml->xpath('//p:sp');
+    foreach ($spNodes as $sp) {
+        $sp->registerXPathNamespace('p', 'http://schemas.openxmlformats.org/presentationml/2006/main');
+        $sp->registerXPathNamespace('a', 'http://schemas.openxmlformats.org/drawingml/2006/main');
 
-                    // استخراج الخط واللون
-                    $font = $el->getFont();
-                    if ($font) {
-                        $fontSize   = $font->getSize()   ?: $fontSize;
-                        $fontWeight = $font->isBold()    ? 'bold' : 'normal';
-                        $clr        = $font->getColor();
-                        if ($clr && $clr->getRGB() !== '000000') {
-                            $color = '#' . $clr->getRGB();
-                        }
-                    }
+        // نوع الـ placeholder
+        $phType = '';
+        $phNodes = $sp->xpath('.//p:ph');
+        if (!empty($phNodes)) {
+            $phType = (string)($phNodes[0]['type'] ?? 'body');
+        }
+
+        // النص الكامل
+        $text = '';
+        $fontSize = 18;
+        $bold = false;
+        $color = '#1e293b';
+
+        $rNodes = $sp->xpath('.//a:r');
+        foreach ($rNodes as $r) {
+            $r->registerXPathNamespace('a', 'http://schemas.openxmlformats.org/drawingml/2006/main');
+            $tNodes = $r->xpath('.//a:t');
+            foreach ($tNodes as $t) {
+                $text .= (string)$t;
+            }
+            // الخط واللون
+            $szNodes = $r->xpath('.//a:rPr/@sz');
+            if (!empty($szNodes)) {
+                $fontSize = (int)((string)$szNodes[0]) / 100;
+            }
+            $boldNodes = $r->xpath('.//a:rPr/@b');
+            if (!empty($boldNodes)) {
+                $bold = (string)$boldNodes[0] === '1';
+            }
+            $colorNodes = $r->xpath('.//a:rPr/a:solidFill/a:srgbClr/@val');
+            if (!empty($colorNodes)) {
+                $color = '#' . (string)$colorNodes[0];
+            }
+        }
+
+        $text = trim($text);
+        if (!$text) continue;
+
+        if ($phType === 'title' || $phType === 'ctrTitle') {
+            $title = $text;
+        } elseif ($phType === 'subTitle') {
+            $subtitle = $text;
+        } else {
+            $content .= $text . "\n";
+        }
+    }
+
+    // ── استخراج الصور ────────────────────────────
+    $relsFile = $extractDir . "/ppt/slides/_rels/slide{$slideIndex}.xml.rels";
+    if (file_exists($relsFile)) {
+        $rels = simplexml_load_file($relsFile);
+        foreach ($rels->Relationship as $rel) {
+            $type   = (string)$rel['Type'];
+            $target = (string)$rel['Target'];
+
+            if (str_contains($type, 'image')) {
+                $imagePath = realpath($extractDir . '/ppt/slides/' . $target);
+                if ($imagePath && file_exists($imagePath)) {
+                    $ext      = strtolower(pathinfo($imagePath, PATHINFO_EXTENSION));
+                    $mime     = match($ext) {
+                        'png'  => 'image/png',
+                        'jpg', 'jpeg' => 'image/jpeg',
+                        'gif'  => 'image/gif',
+                        'webp' => 'image/webp',
+                        default => 'image/png',
+                    };
+                    $images[] = [
+                        'id'  => uniqid('img_'),
+                        'src' => "data:{$mime};base64," . base64_encode(file_get_contents($imagePath)),
+                    ];
                 }
-                $text .= "\n";
             }
-            $text = trim($text);
-            if (!$text) continue;
-
-            // تحديد نوع النص حسب الحجم
-            if (empty($title) || $fontSize >= 28) {
-                $title = $text;
-            } elseif (empty($subtitle) || $fontSize >= 18) {
-                $subtitle = $text;
-            } else {
-                $content .= $text . "\n";
-            }
-        }
-
-        // ── صور ───────────────────────────────────────
-        if ($shape instanceof \PhpOffice\PhpPresentation\Shape\Drawing\Gd) {
-            ob_start();
-            imagepng($shape->getImage());
-            $imgData = ob_get_clean();
-            $images[] = [
-                'id'     => uniqid('img_'),
-                'src'    => 'data:image/png;base64,' . base64_encode($imgData),
-                'x'      => $shape->getOffsetX(),
-                'y'      => $shape->getOffsetY(),
-                'width'  => $shape->getWidth(),
-                'height' => $shape->getHeight(),
-            ];
-        }
-
-        // ── أشكال (مستطيلات، دوائر، إلخ) ────────────
-        if ($shape instanceof \PhpOffice\PhpPresentation\Shape\AutoShape) {
-            $fill  = $shape->getFill();
-            $color = '#e2e8f0';
-            if ($fill && $fill->getFillType() !== \PhpOffice\PhpPresentation\Style\Fill::FILL_NONE) {
-                $clr = $fill->getStartColor();
-                if ($clr) $color = '#' . $clr->getRGB();
-            }
-            $shapes[] = [
-                'id'     => uniqid('shape_'),
-                'type'   => 'rect',
-                'x'      => $shape->getOffsetX(),
-                'y'      => $shape->getOffsetY(),
-                'width'  => $shape->getWidth(),
-                'height' => $shape->getHeight(),
-                'fill'   => $color,
-            ];
         }
     }
 
     return [
-        'layout'       => 'Title and Content',
-        'title'        => $title,
-        'subtitle'     => $subtitle,
-        'content'      => trim($content),
-        'images'       => $images,
-        'shapes'       => $shapes,
-        'tables'       => [],
-        'titleStyle'   => ['fontFamily' => 'Calibri', 'fontSize' => 48],
-        'subtitleStyle' => ['fontFamily' => 'Calibri', 'fontSize' => 24],
-        'contentStyle' => ['fontFamily' => 'Calibri', 'fontSize' => 18],
+        'layout'          => 'Title and Content',
+        'title'           => $title,
+        'subtitle'        => $subtitle,
+        'content'         => trim($content),
+        'images'          => $images,
+        'shapes'          => [],
+        'tables'          => [],
+        'backgroundColor' => $slideLayoutBg ?: $bgColor,
+        'titleStyle'      => ['fontFamily' => 'Calibri', 'fontSize' => 40, 'color' => '#1e293b'],
+        'subtitleStyle'   => ['fontFamily' => 'Calibri', 'fontSize' => 24, 'color' => '#475569'],
+        'contentStyle'    => ['fontFamily' => 'Calibri', 'fontSize' => 18, 'color' => '#334155'],
     ];
+}
+
+private function getSlideBackground($extractDir, $slideIndex): ?string
+{
+    // محاولة قراءة خلفية الـ slideLayout
+    $relsFile = $extractDir . "/ppt/slides/_rels/slide{$slideIndex}.xml.rels";
+    if (!file_exists($relsFile)) return null;
+
+    $rels = simplexml_load_file($relsFile);
+    foreach ($rels->Relationship as $rel) {
+        if (str_contains((string)$rel['Type'], 'slideLayout')) {
+            $layoutPath = realpath($extractDir . '/ppt/slides/' . (string)$rel['Target']);
+            if ($layoutPath && file_exists($layoutPath)) {
+                $layoutXml = simplexml_load_file($layoutPath);
+                $layoutXml->registerXPathNamespace('a', 'http://schemas.openxmlformats.org/drawingml/2006/main');
+                $bgNodes = $layoutXml->xpath('//a:solidFill/a:srgbClr');
+                if (!empty($bgNodes)) {
+                    return '#' . (string)$bgNodes[0]['val'];
+                }
+            }
+        }
+    }
+    return null;
+}
+
+private function deleteDir($dir): void
+{
+    if (!is_dir($dir)) return;
+    $files = array_diff(scandir($dir), ['.', '..']);
+    foreach ($files as $file) {
+        $path = $dir . '/' . $file;
+        is_dir($path) ? $this->deleteDir($path) : unlink($path);
+    }
+    rmdir($dir);
 }
 }
