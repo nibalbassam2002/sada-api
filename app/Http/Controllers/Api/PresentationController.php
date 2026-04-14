@@ -256,7 +256,7 @@ class PresentationController extends Controller
     public function importPptx(Request $request)
 {
     $request->validate([
-        'file'  => 'required|file|mimes:pptx,zip|max:20480',
+        'file'  => 'required|file|max:20480|mimetypes:application/vnd.openxmlformats-officedocument.presentationml.presentation',
         'title' => 'nullable|string|max:255',
     ]);
 
