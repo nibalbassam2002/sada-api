@@ -253,21 +253,27 @@ class PresentationController extends Controller
 
         return response()->json(['status' => true, 'message' => 'Deleted successfully']);
     }
-    public function importPptx(Request $request)
+public function importPptx(Request $request)
 {
     $request->validate([
-        'file'  => 'required|file|max:20480|mimetypes:application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'file'  => 'required|file|max:20480',
         'title' => 'nullable|string|max:255',
     ]);
 
-    $file     = $request->file('file');
-    $title    = $request->input('title') ?: $file->getClientOriginalName();
-    $path     = $file->store('temp_pptx', 'local');
-    $fullPath = storage_path('app/' . $path);
+    $file  = $request->file('file');
+    $title = $request->input('title') ?: $file->getClientOriginalName();
+
+    // ✅ احفظ في tmp مباشرة وتحقق إنه موجود
+    $tmpPath = tempnam(sys_get_temp_dir(), 'pptx_') . '.pptx';
+    copy($file->getRealPath(), $tmpPath);
+
+    if (!file_exists($tmpPath)) {
+        return response()->json(['status' => false, 'message' => 'File could not be saved'], 422);
+    }
 
     try {
         $reader       = \PhpOffice\PhpPresentation\IOFactory::createReader('PowerPoint2007');
-        $presentation = $reader->load($fullPath);
+        $presentation = $reader->load($tmpPath);
 
         $newPresentation = \App\Models\Presentation::create([
             'user_id'     => auth()->id(),
@@ -287,7 +293,7 @@ class PresentationController extends Controller
             ]);
         }
 
-        \Storage::disk('local')->delete($path);
+        @unlink($tmpPath); // حذف الملف المؤقت
 
         return response()->json([
             'status'  => true,
@@ -296,14 +302,14 @@ class PresentationController extends Controller
         ], 201);
 
     } catch (\Exception $e) {
-    \Storage::disk('local')->delete($path);
-    return response()->json([
-        'status'  => false,
-        'message' => $e->getMessage(),
-        'line'    => $e->getLine(),
-        'file'    => basename($e->getFile()),
-    ], 422);
-}
+        @unlink($tmpPath);
+        return response()->json([
+            'status'  => false,
+            'message' => $e->getMessage(),
+            'line'    => $e->getLine(),
+            'file'    => basename($e->getFile()),
+        ], 422);
+    }
 }
 
 private function extractSlideContent($slide): array
