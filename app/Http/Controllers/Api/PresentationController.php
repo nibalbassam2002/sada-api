@@ -296,12 +296,13 @@ class PresentationController extends Controller
         ], 201);
 
     } catch (\Exception $e) {
-        \Storage::disk('local')->delete($path);
-        return response()->json([
-            'status'  => false,
-            'message' => 'Failed to parse file: ' . $e->getMessage(),
-        ], 422);
-    }
+    \Storage::disk('local')->delete($path);
+    return response()->json([
+        'status'  => false,
+        'message' => $e->getMessage(), // ← هذا يظهر السبب الحقيقي
+        'class'   => get_class($e),
+    ], 422);
+}
 }
 
 private function extractSlideContent($slide): array
