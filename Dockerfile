@@ -23,7 +23,8 @@ RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # 4. تثبيت امتدادات PHP (أضفنا zip هنا)
 RUN docker-php-ext-install pdo_mysql pdo_pgsql mbstring exif pcntl bcmath gd zip
-
+RUN echo "upload_max_filesize = 50M" >> /usr/local/etc/php/conf.d/uploads.ini \
+ && echo "post_max_size = 50M" >> /usr/local/etc/php/conf.d/uploads.ini
 # 5. تثبيت Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
