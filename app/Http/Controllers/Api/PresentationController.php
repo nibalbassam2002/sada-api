@@ -299,8 +299,9 @@ class PresentationController extends Controller
     \Storage::disk('local')->delete($path);
     return response()->json([
         'status'  => false,
-        'message' => $e->getMessage(), // ← هذا يظهر السبب الحقيقي
-        'class'   => get_class($e),
+        'message' => $e->getMessage(),
+        'line'    => $e->getLine(),
+        'file'    => basename($e->getFile()),
     ], 422);
 }
 }
