@@ -108,40 +108,40 @@ public function changeSlide(Request $request, $sessionId)
             $previousSlideId = $session->current_slide_id;
             $isNewQuestion = ($previousSlideId != $request->slide_id);
             
-            // ✅ التحقق: هل هذا السؤال قد انتهى سابقاً؟
+            // ✅ هل هذا السؤال منتهي سابقاً؟
             $wasExpired = !is_null($session->question_ended_at);
             
             if ($wasExpired) {
-                // ✅ السؤال منتهي ولا يمكن إعادة فتحه
+                // السؤال منتهي → نتركه منتهي
                 $updateData['question_started_at'] = $session->question_started_at;
+                $updateData['question_ended_at'] = $session->question_ended_at;
                 $updateData['question_total_duration'] = $session->question_total_duration;
                 $updateData['question_user_duration'] = $session->question_user_duration;
-                $updateData['question_ended_at'] = $session->question_ended_at;
                 $updateData['timer_expired'] = true;
                 $updateData['timer_duration'] = null;
                 $updateData['timer_started_at'] = null;
             } 
-            elseif ($isNewQuestion || !$session->question_started_at) {
-                // ✅ سؤال جديد تماماً
+            elseif ($isNewQuestion || is_null($session->question_started_at)) {
+                // سؤال جديد
                 $updateData['question_started_at'] = $now;
+                $updateData['question_ended_at'] = null;
                 $updateData['question_total_duration'] = $totalDuration;
                 $updateData['question_user_duration'] = $userDuration;
-                $updateData['question_ended_at'] = null;
                 $updateData['timer_expired'] = false;
                 $updateData['timer_duration'] = null;
                 $updateData['timer_started_at'] = null;
             } else {
-                // ✅ نفس السؤال ولم ينته بعد
+                // نفس السؤال
                 $updateData['question_started_at'] = $session->question_started_at;
+                $updateData['question_ended_at'] = null;
                 $updateData['question_total_duration'] = $totalDuration;
                 $updateData['question_user_duration'] = $userDuration;
-                $updateData['question_ended_at'] = null;
                 $updateData['timer_expired'] = false;
                 $updateData['timer_duration'] = null;
                 $updateData['timer_started_at'] = null;
             }
         } else {
-            // ليس سؤالاً → نمسح كل شيء
+            // ليس سؤالاً
             $updateData['question_started_at'] = null;
             $updateData['question_ended_at'] = null;
             $updateData['question_total_duration'] = null;
@@ -375,14 +375,13 @@ public function currentSlide($sessionId)
         'questionType' => $content['questionType'] ?? null,
     ]);
 
-    // ✅ معلومات السؤال (مهمة للفرونت)
+    // معلومات السؤال
     $questionInfo = null;
     
     if ($session->question_started_at && $session->question_total_duration) {
         $now = now();
         $questionEndsAt = $session->question_started_at->copy()->addSeconds($session->question_total_duration);
         
-        // هل انتهى السؤال يدوياً أم تلقائياً؟
         $isManuallyClosed = !is_null($session->question_ended_at);
         $isTimeExpired = $now->greaterThanOrEqualTo($questionEndsAt);
         $isExpired = $isManuallyClosed || $isTimeExpired;
@@ -457,23 +456,28 @@ public function submitAnswer(Request $request, $id)
         return response()->json(['status' => false, 'message' => 'Participant not found'], 404);
     }
 
-    // 1. التحقق: هل يوجد سؤال نشط؟
-    if (!$session->question_started_at || !$session->question_total_duration) {
-        return response()->json(['status' => false, 'message' => 'No active question'], 403);
-    }
-    
-    $now = now();
-    $questionEndsAt = $session->question_started_at->copy()->addSeconds($session->question_total_duration);
-    
-    // 2. التحقق: هل انتهى الوقت الكلي للسؤال؟
-    if ($now->greaterThanOrEqualTo($questionEndsAt) || $session->question_ended_at) {
+    // ✅ التحقق 1: هل السؤال منتهي كلياً؟
+    if ($session->question_ended_at) {
         return response()->json([
             'status' => false, 
-            'message' => 'Question has expired globally'
+            'message' => 'This question has been closed by the presenter'
         ], 403);
     }
+
+    // ✅ التحقق 2: هل انتهى الوقت الكلي للسؤال؟
+    if ($session->question_started_at && $session->question_total_duration) {
+        $now = now();
+        $questionEndsAt = $session->question_started_at->copy()->addSeconds($session->question_total_duration);
+        
+        if ($now->greaterThanOrEqualTo($questionEndsAt)) {
+            return response()->json([
+                'status' => false, 
+                'message' => 'Question has expired globally'
+            ], 403);
+        }
+    }
     
-    // 3. التحقق: هل وقت المستخدم الشخصي انتهى؟
+    // ✅ التحقق 3: هل وقت المستخدم الشخصي انتهى؟
     $userQuestionKey = "user_{$participant->id}_question_{$data['slide_id']}_started_at";
     $userStartedAt = cache()->get($userQuestionKey);
     
@@ -494,7 +498,7 @@ public function submitAnswer(Request $request, $id)
         ], 403);
     }
 
-    // 4. التحقق من عدم تكرار الإجابة
+    // ✅ التحقق 4: منع التكرار
     $exists = \App\Models\Response::where('session_id', $id)
         ->where('slide_id', $data['slide_id'])
         ->where('participant_id', $participant->id)
@@ -504,7 +508,7 @@ public function submitAnswer(Request $request, $id)
         return response()->json(['status' => false, 'message' => 'Already answered'], 409);
     }
 
-    // 5. حفظ الإجابة
+    // ✅ حفظ الإجابة
     $response = \App\Models\Response::create([
         'session_id'     => $id,
         'slide_id'       => $data['slide_id'],
@@ -714,17 +718,23 @@ public function closeQuestion($sessionId)
         $q->where('user_id', auth()->id())
     )->where('id', $sessionId)->firstOrFail();
 
-    // ✅ فقط إذا لم يكن السؤال منتهياً بالفعل
+    // فقط إذا السؤال لم ينتهي بالفعل
     if (is_null($session->question_ended_at)) {
         $session->update([
             'question_ended_at' => now(),
             'timer_expired' => true,
+            // مهم: إذا ما كان فيه وقت بداية، نضيف وقت الحالي
+            'question_started_at' => $session->question_started_at ?? now(),
         ]);
     }
 
     return response()->json([
         'status' => true,
-        'message' => 'Question closed manually'
+        'message' => 'Question closed manually',
+        'data' => [
+            'question_started_at' => $session->fresh()->question_started_at,
+            'question_ended_at' => $session->fresh()->question_ended_at,
+        ]
     ]);
 }
 }
