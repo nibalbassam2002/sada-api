@@ -80,7 +80,6 @@ public function changeSlide(Request $request, $sessionId)
 {
     $request->validate([
         'slide_id'    => 'required|integer',
-        'slide'       => 'nullable|array',
         'template_id' => 'nullable|integer',
     ]);
 
@@ -90,29 +89,35 @@ public function changeSlide(Request $request, $sessionId)
      ->whereIn('status', ['waiting', 'active'])
      ->firstOrFail();
 
-    $updateData = ['current_slide_id' => $request->slide_id];
+    // ✅ اقرأ بيانات الشريحة من DB مباشرة — لا تعتمد على الـ frontend
+    $slide = $session->presentation->slides()
+        ->where('id', $request->slide_id)
+        ->first();
 
-    if ($request->has('slide') && $request->slide) {
-        $updateData['current_slide_data'] = $request->slide;
+    $updateData = [
+        'current_slide_id'   => $request->slide_id,
+        'timer_expired'      => false,  // ✅ امسح انتهاء الوقت لكل شريحة جديدة
+        'timer_duration'     => null,
+        'timer_started_at'   => null,
+    ];
 
-        $layout       = $request->slide['layout']       ?? null;
-        $questionData = $request->slide['questionData'] ?? null;
+    if ($slide) {
+        $content      = is_string($slide->content)
+            ? (json_decode($slide->content, true) ?? [])
+            : ($slide->content ?? []);
+        $layout       = $content['layout']       ?? $slide->type ?? null;
+        $questionData = $content['questionData'] ?? null;
         $timer        = null;
-        
+
         if (is_array($questionData)) {
             $timer = $questionData['timer'] ?? null;
         }
 
-        $isQ = ($layout === 'QUESTION' || !empty($questionData));
+        $isQuestion = ($layout === 'QUESTION' || !empty($questionData));
 
-        if ($isQ && $timer) {
+        if ($isQuestion && $timer) {
             $updateData['timer_duration']   = (int) $timer;
             $updateData['timer_started_at'] = now();
-            $updateData['timer_expired']    = false;
-        } else {
-            $updateData['timer_duration']   = null;
-            $updateData['timer_started_at'] = null;
-            $updateData['timer_expired']    = false;
         }
     }
 
@@ -121,14 +126,25 @@ public function changeSlide(Request $request, $sessionId)
     }
 
     $session->update($updateData);
-    
-    // ✅ أرجعي timer في response مباشرة
+
+    $fresh = $session->fresh();
+
+    // ✅ بنى timerInfo للـ response
+    $timerInfo = null;
+    if ($fresh->timer_started_at && $fresh->timer_duration) {
+        $elapsed   = now()->diffInSeconds($fresh->timer_started_at);
+        $remaining = max(0, $fresh->timer_duration - $elapsed);
+        $timerInfo = [
+            'duration'          => $fresh->timer_duration,
+            'started_at'        => $fresh->timer_started_at->toISOString(),
+            'seconds_remaining' => (int) $remaining,
+            'is_expired'        => $fresh->timer_expired || $remaining <= 0,
+        ];
+    }
+
     return response()->json([
         'status' => true,
-        'data'   => [
-            'timer_duration'   => $session->fresh()->timer_duration,
-            'timer_started_at' => $session->fresh()->timer_started_at,
-        ]
+        'data'   => ['timer' => $timerInfo]
     ]);
 }
 
@@ -389,7 +405,7 @@ public function expireTimer($sessionId)
             ],
         ]);
     }
-    public function submitAnswer(Request $request, $id)
+ public function submitAnswer(Request $request, $id)
 {
     $data = $request->validate([
         'slide_id'       => 'required|string',
@@ -399,7 +415,28 @@ public function expireTimer($sessionId)
         'time_taken'     => 'nullable|integer',
     ]);
 
-    // إيجاد المشارك من device_token
+    $session = Session::findOrFail($id);
+
+    // ✅ امنع الإجابة إذا انتهى الوقت في قاعدة البيانات
+    if ($session->timer_expired) {
+        return response()->json([
+            'status'  => false,
+            'message' => 'Time is up. No more answers accepted.'
+        ], 403);
+    }
+
+    // ✅ امنع الإجابة إذا انتهى الوقت فعلياً (حتى لو لم يُحفظ timer_expired بعد)
+    if ($session->timer_started_at && $session->timer_duration) {
+        $elapsed = now()->diffInSeconds($session->timer_started_at);
+        if ($elapsed > $session->timer_duration) {
+            $session->update(['timer_expired' => true]);
+            return response()->json([
+                'status'  => false,
+                'message' => 'Time is up. No more answers accepted.'
+            ], 403);
+        }
+    }
+
     $participant = \App\Models\Participant::where('session_id', $id)
         ->where('device_token', $data['device_token'])
         ->first();
@@ -408,7 +445,6 @@ public function expireTimer($sessionId)
         return response()->json(['status' => false, 'message' => 'Participant not found'], 404);
     }
 
-    // منع التصويت مرتين
     $exists = \App\Models\Response::where('session_id', $id)
         ->where('slide_id', $data['slide_id'])
         ->where('participant_id', $participant->id)
@@ -418,6 +454,22 @@ public function expireTimer($sessionId)
         return response()->json(['status' => false, 'message' => 'Already answered'], 409);
     }
 
+    // ✅ احسبي is_correct
+    $slideRecord  = $session->presentation->slides()
+        ->where('id', $data['slide_id'])
+        ->first();
+    $isCorrect = false;
+    if ($slideRecord) {
+        $content      = is_string($slideRecord->content)
+            ? (json_decode($slideRecord->content, true) ?? [])
+            : ($slideRecord->content ?? []);
+        $questionData = $content['questionData'] ?? null;
+        $correctAnswer = $questionData['correctAnswer'] ?? null;
+        if ($correctAnswer !== null && $data['answer_index'] !== null) {
+            $isCorrect = ((int)$data['answer_index'] === (int)$correctAnswer);
+        }
+    }
+
     $response = \App\Models\Response::create([
         'session_id'     => $id,
         'slide_id'       => $data['slide_id'],
@@ -425,6 +477,10 @@ public function expireTimer($sessionId)
         'answer_index'   => $data['answer_index'] ?? null,
         'answer_value'   => $data['answer_value'] ?? null,
         'time_taken'     => $data['time_taken'] ?? 0,
+        'is_correct'     => $isCorrect,
+        'points'         => $isCorrect ? max(100, (($data['time_taken'] ?? 0) > 0
+            ? 1000 - ($data['time_taken'] * 10)
+            : 1000)) : 0,
     ]);
 
     return response()->json(['status' => true, 'data' => $response]);
