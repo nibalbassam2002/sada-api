@@ -18,7 +18,10 @@ class Session extends Model
         'presentation_id', 'access_code', 'status',
         'current_slide_id', 'is_voting_open', 'show_results',
         'timer_duration', 'timer_started_at', 'session_settings',
-        'started_at', 'ended_at','timer_expired',
+        'started_at', 'ended_at','timer_expired',     'question_started_at',
+        'question_ended_at',        
+        'question_total_duration',  
+        'question_user_duration',
     ];
 
     protected $casts = [
@@ -29,6 +32,8 @@ class Session extends Model
         'started_at'       => 'datetime',
         'ended_at'         => 'datetime',
         'timer_started_at' => 'datetime',
+        'question_started_at' => 'datetime',   
+    'question_ended_at'   => 'datetime', 
     ];
 
     public function presentation(): BelongsTo

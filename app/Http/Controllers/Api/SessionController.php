@@ -59,7 +59,7 @@ class SessionController extends Controller
     $session = Session::whereHas('presentation', fn($q) =>
         $q->where('user_id', auth()->id())
     )->where('id', $sessionId)
-     ->whereIn('status', ['waiting', 'active'])  // ← غيّري هنا
+     ->whereIn('status', ['waiting', 'active']) 
      ->firstOrFail();
 
     // فقط لو waiting تحوّلها لـ active
@@ -95,24 +95,53 @@ public function changeSlide(Request $request, $sessionId)
     if ($request->has('slide') && $request->slide) {
         $updateData['current_slide_data'] = $request->slide;
 
-        $layout       = $request->slide['layout']       ?? null;
+        $layout       = $request->slide['layout'] ?? null;
         $questionData = $request->slide['questionData'] ?? null;
-        $timer        = null;
         
-        if (is_array($questionData)) {
-            $timer = $questionData['timer'] ?? null;
-        }
+        $isQuestion = ($layout === 'QUESTION' || !empty($questionData));
 
-        $isQ = ($layout === 'QUESTION' || !empty($questionData));
-
-        if ($isQ && $timer) {
-            $updateData['timer_duration']   = (int) $timer;
-            $updateData['timer_started_at'] = now();
-            $updateData['timer_expired']    = false;
+        if ($isQuestion) {
+            // قراءة القيم من إعدادات السؤال (مع القيم الافتراضية)
+            $totalDuration = (int) ($questionData['total_duration'] ?? 900);   // 15 دقيقة
+            $userDuration  = (int) ($questionData['user_duration'] ?? 30);     // 30 ثانية
+            
+            $now = now();
+            
+            // هل هذا سؤال جديد أم نفس السؤال؟
+            $previousSlideId = $session->current_slide_id;
+            $isNewQuestion = ($previousSlideId != $request->slide_id);
+            
+            if ($isNewQuestion || !$session->question_started_at) {
+                // سؤال جديد → نبدأ الوقت من الآن
+                $updateData['question_started_at'] = $now;
+            } else {
+                // نفس السؤال → نبقى الوقت القديم
+                $updateData['question_started_at'] = $session->question_started_at;
+            }
+            
+            $updateData['question_total_duration'] = $totalDuration;
+            $updateData['question_user_duration'] = $userDuration;
+            
+            // هل انتهى الوقت الكلي للسؤال؟
+            $expectedEnd = $updateData['question_started_at']->copy()->addSeconds($totalDuration);
+            if ($now->greaterThanOrEqualTo($expectedEnd)) {
+                $updateData['question_ended_at'] = $expectedEnd;
+                $updateData['timer_expired'] = true;
+            } else {
+                $updateData['question_ended_at'] = null;
+                $updateData['timer_expired'] = false;
+                $updateData['timer_duration'] = null;
+                $updateData['timer_started_at'] = null;
+            }
         } else {
-            $updateData['timer_duration']   = null;
+            // ليس سؤالاً → نمسح كل شيء
+            $updateData['question_started_at'] = null;
+            $updateData['question_ended_at'] = null;
+            $updateData['question_total_duration'] = null;
+            $updateData['question_user_duration'] = null;
+            $updateData['timer_duration'] = null;
             $updateData['timer_started_at'] = null;
-            $updateData['timer_expired']    = false;
+            $updateData['timer_expired'] = false;
         }
     }
 
@@ -122,24 +151,23 @@ public function changeSlide(Request $request, $sessionId)
 
     $session->update($updateData);
     
-    // ✅ أرجعي timer في response مباشرة
     return response()->json([
         'status' => true,
         'data'   => [
-            'timer_duration'   => $session->fresh()->timer_duration,
-            'timer_started_at' => $session->fresh()->timer_started_at,
+            'question_started_at' => $session->fresh()->question_started_at,
+            'question_total_duration' => $session->fresh()->question_total_duration,
+            'question_user_duration' => $session->fresh()->question_user_duration,
+            'question_ended_at' => $session->fresh()->question_ended_at,
         ]
     ]);
 }
-
   public function end($sessionId)
 {
     $session = Session::whereHas('presentation', fn($q) =>
         $q->where('user_id', auth()->id())
     )->where('id', $sessionId)
-     ->firstOrFail(); // ← احذف شرط الـ status
+     ->firstOrFail();
 
-    // لو خلصت مسبقاً، رجعي success بدون error
     if ($session->status === 'finished') {
         return response()->json(['status' => true, 'data' => ['already_ended' => true]]);
     }
@@ -322,45 +350,55 @@ public function changeSlide(Request $request, $sessionId)
 
     $slideData = array_merge($content, [
         'id'           => $slide->id,
-        'layout'       => $content['layout']        ?? $slide->type ?? 'BLANK',
-        'title'        => $content['title']         ?? '',
-        'subtitle'     => $content['subtitle']      ?? '',
-        'content'      => $content['content']       ?? '',
-        'leftContent'  => $content['leftContent']   ?? '',
-        'rightContent' => $content['rightContent']  ?? '',
-        'images'       => $content['images']        ?? [],
-        'shapes'       => $content['shapes']        ?? [],
-        'tables'       => $content['tables']        ?? [],
-        'elements'     => $content['elements']      ?? [],
-        'background'   => $content['background']    ?? null,
-        'titleStyle'   => $content['titleStyle']    ?? (object)[],
+        'layout'       => $content['layout'] ?? $slide->type ?? 'BLANK',
+        'title'        => $content['title'] ?? '',
+        'subtitle'     => $content['subtitle'] ?? '',
+        'content'      => $content['content'] ?? '',
+        'leftContent'  => $content['leftContent'] ?? '',
+        'rightContent' => $content['rightContent'] ?? '',
+        'images'       => $content['images'] ?? [],
+        'shapes'       => $content['shapes'] ?? [],
+        'tables'       => $content['tables'] ?? [],
+        'elements'     => $content['elements'] ?? [],
+        'background'   => $content['background'] ?? null,
+        'titleStyle'   => $content['titleStyle'] ?? (object)[],
         'subtitleStyle'=> $content['subtitleStyle'] ?? (object)[],
-        'contentStyle' => $content['contentStyle']  ?? (object)[],
-        'questionData' => $content['questionData']  ?? null,
-        'questionType' => $content['questionType']  ?? null,
+        'contentStyle' => $content['contentStyle'] ?? (object)[],
+        'questionData' => $content['questionData'] ?? null,
+        'questionType' => $content['questionType'] ?? null,
     ]);
 
-    // ✅ احسب الوقت المتبقي من السيرفر
-    $timerInfo = null;
-    if ($session->timer_started_at && $session->timer_duration) {
-    $elapsed   = now()->diffInSeconds($session->timer_started_at);
-    $remaining = max(0, $session->timer_duration - $elapsed);
-    $isExpired = $session->timer_expired || $remaining <= 0;
-
-        $timerInfo = [
-        'duration'          => $session->timer_duration,
-        'started_at'        => $session->timer_started_at->toISOString(),
-        'seconds_remaining' => (int) $remaining,
-        'is_expired'        => $isExpired, // ✅
-    ];
-}
+    // معلومات السؤال للمشارك
+    $questionInfo = null;
+    
+    if ($session->question_started_at && $session->question_total_duration) {
+        $now = now();
+        $questionEndsAt = $session->question_started_at->copy()->addSeconds($session->question_total_duration);
+        $isQuestionExpired = $now->greaterThanOrEqualTo($questionEndsAt) || !is_null($session->question_ended_at);
+        
+        if (!$isQuestionExpired) {
+            $questionInfo = [
+                'is_active' => true,
+                'total_duration' => $session->question_total_duration,
+                'user_duration' => $session->question_user_duration ?? 30,
+                'question_started_at' => $session->question_started_at->toISOString(),
+                'question_ends_at' => $questionEndsAt->toISOString(),
+            ];
+        } else {
+            $questionInfo = [
+                'is_active' => false,
+                'reason' => 'expired',
+                'question_ended_at' => $session->question_ended_at ?? $questionEndsAt->toISOString(),
+            ];
+        }
+    }
 
     return response()->json([
         'status' => true,
         'data'   => [
-            'slide'       => $slideData,
+            'slide' => $slideData,
             'template_id' => $session->presentation->template_id ?? 0,
-            'timer'       => $timerInfo, // ✅ هذا الجديد
+            'question_info' => $questionInfo,
         ]
     ]);
 }
@@ -389,7 +427,7 @@ public function expireTimer($sessionId)
             ],
         ]);
     }
-    public function submitAnswer(Request $request, $id)
+public function submitAnswer(Request $request, $id)
 {
     $data = $request->validate([
         'slide_id'       => 'required|string',
@@ -399,8 +437,8 @@ public function expireTimer($sessionId)
         'time_taken'     => 'nullable|integer',
     ]);
 
-    // إيجاد المشارك من device_token
-    $participant = \App\Models\Participant::where('session_id', $id)
+    $session = Session::findOrFail($id);
+    $participant = $session->participants()
         ->where('device_token', $data['device_token'])
         ->first();
 
@@ -408,7 +446,44 @@ public function expireTimer($sessionId)
         return response()->json(['status' => false, 'message' => 'Participant not found'], 404);
     }
 
-    // منع التصويت مرتين
+    // 1. التحقق: هل يوجد سؤال نشط؟
+    if (!$session->question_started_at || !$session->question_total_duration) {
+        return response()->json(['status' => false, 'message' => 'No active question'], 403);
+    }
+    
+    $now = now();
+    $questionEndsAt = $session->question_started_at->copy()->addSeconds($session->question_total_duration);
+    
+    // 2. التحقق: هل انتهى الوقت الكلي للسؤال؟
+    if ($now->greaterThanOrEqualTo($questionEndsAt) || $session->question_ended_at) {
+        return response()->json([
+            'status' => false, 
+            'message' => 'Question has expired globally'
+        ], 403);
+    }
+    
+    // 3. التحقق: هل وقت المستخدم الشخصي انتهى؟
+    $userQuestionKey = "user_{$participant->id}_question_{$data['slide_id']}_started_at";
+    $userStartedAt = cache()->get($userQuestionKey);
+    
+    if (!$userStartedAt) {
+        return response()->json([
+            'status' => false,
+            'message' => 'You must load the question first'
+        ], 403);
+    }
+    
+    $userDuration = $session->question_user_duration ?? 30;
+    $userDeadline = $userStartedAt->copy()->addSeconds($userDuration);
+    
+    if ($now->greaterThan($userDeadline)) {
+        return response()->json([
+            'status' => false,
+            'message' => 'Your time to answer has expired'
+        ], 403);
+    }
+
+    // 4. التحقق من عدم تكرار الإجابة
     $exists = \App\Models\Response::where('session_id', $id)
         ->where('slide_id', $data['slide_id'])
         ->where('participant_id', $participant->id)
@@ -418,6 +493,7 @@ public function expireTimer($sessionId)
         return response()->json(['status' => false, 'message' => 'Already answered'], 409);
     }
 
+    // 5. حفظ الإجابة
     $response = \App\Models\Response::create([
         'session_id'     => $id,
         'slide_id'       => $data['slide_id'],
@@ -485,7 +561,6 @@ public function slideResults($sessionId, $slideId)
     ]);
 }
  
-// ── 4) تقرير كامل بعد انتهاء الجلسة ─────────────────────────
 public function generateReport($sessionId)
 {
     $session = Session::whereHas('presentation', fn($q) =>
@@ -494,13 +569,11 @@ public function generateReport($sessionId)
  
     $participants = $session->participants()->count();
  
-    // جلب كل الإجابات مع تجميعها
     $allResponses = \App\Models\Response::where('session_id', $sessionId)
         ->selectRaw('slide_id, answer_index, COUNT(*) as count, SUM(is_correct) as correct_count, AVG(time_taken) as avg_time')
         ->groupBy('slide_id', 'answer_index')
         ->get();
  
-    // تجميع البيانات لكل شريحة
     $slideStats = [];
     foreach ($allResponses as $r) {
         $sid = $r->slide_id;
@@ -522,7 +595,6 @@ public function generateReport($sessionId)
         ];
     }
  
-    // إجمالي النقاط لكل مشارك
     $leaderboard = \App\Models\Response::where('session_id', $sessionId)
         ->join('participants', 'responses.participant_id', '=', 'participants.id')
         ->selectRaw('participants.nickname, SUM(responses.points) as total_points, SUM(responses.is_correct) as correct_answers')
@@ -541,7 +613,6 @@ public function generateReport($sessionId)
         'generated_at'      => now()->toDateTimeString(),
     ];
  
-    // حفظ في جدول reports
     \App\Models\Report::updateOrCreate(
         ['session_id' => $sessionId],
         ['total_participants' => $participants, 'summary_data' => $report]
@@ -552,5 +623,79 @@ public function generateReport($sessionId)
         'data'   => $report,
     ]);
 }
- 
+ public function getUserRemainingTime($sessionId, Request $request)
+{
+    $request->validate([
+        'device_token' => 'required|string',
+    ]);
+
+    $session = Session::findOrFail($sessionId);
+    $participant = $session->participants()
+        ->where('device_token', $request->device_token)
+        ->first();
+
+    if (!$participant) {
+        return response()->json(['status' => false, 'message' => 'Participant not found'], 404);
+    }
+
+    // هل يوجد سؤال نشط؟
+    if (!$session->question_started_at || !$session->question_total_duration) {
+        return response()->json([
+            'status' => true,
+            'data' => [
+                'is_active' => false,
+                'reason' => 'no_active_question'
+            ]
+        ]);
+    }
+
+    $now = now();
+    $questionEndsAt = $session->question_started_at->copy()->addSeconds($session->question_total_duration);
+    
+    // هل انتهى الوقت الكلي للسؤال؟
+    if ($now->greaterThanOrEqualTo($questionEndsAt) || $session->question_ended_at) {
+        return response()->json([
+            'status' => true,
+            'data' => [
+                'is_active' => false,
+                'reason' => 'question_closed'
+            ]
+        ]);
+    }
+
+    // مفتاح التخزين لكل مشارك لكل سؤال
+    $userQuestionKey = "user_{$participant->id}_question_{$session->current_slide_id}_started_at";
+    
+    $userStartedAt = cache()->get($userQuestionKey);
+    
+    if (!$userStartedAt) {
+        // أول مرة يفتح فيها هذا المستخدم هذا السؤال
+        $userStartedAt = $now;
+        cache()->put($userQuestionKey, $userStartedAt, 3600);
+    }
+    
+    $userDuration = $session->question_user_duration ?? 30;
+    $userDeadline = $userStartedAt->copy()->addSeconds($userDuration);
+    $remainingForUser = $userDeadline->diffInSeconds($now, false);
+    
+    if ($remainingForUser <= 0) {
+        return response()->json([
+            'status' => true,
+            'data' => [
+                'is_active' => false,
+                'reason' => 'user_time_expired'
+            ]
+        ]);
+    }
+    
+    return response()->json([
+        'status' => true,
+        'data' => [
+            'is_active' => true,
+            'remaining_seconds' => (int) $remainingForUser,
+            'user_deadline' => $userDeadline->toISOString(),
+            'user_duration' => $userDuration,
+        ]
+    ]);
+}
 }
