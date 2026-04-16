@@ -327,7 +327,7 @@ public function changeSlide(Request $request, $sessionId)
         ]);
     }
 
-    public function currentSlide($sessionId)
+public function currentSlide($sessionId)
 {
     $session = Session::findOrFail($sessionId);
 
@@ -368,15 +368,19 @@ public function changeSlide(Request $request, $sessionId)
         'questionType' => $content['questionType'] ?? null,
     ]);
 
-    // معلومات السؤال للمشارك
+    // ✅ معلومات السؤال (مهمة للفرونت)
     $questionInfo = null;
     
     if ($session->question_started_at && $session->question_total_duration) {
         $now = now();
         $questionEndsAt = $session->question_started_at->copy()->addSeconds($session->question_total_duration);
-        $isQuestionExpired = $now->greaterThanOrEqualTo($questionEndsAt) || !is_null($session->question_ended_at);
         
-        if (!$isQuestionExpired) {
+        // هل انتهى السؤال يدوياً أم تلقائياً؟
+        $isManuallyClosed = !is_null($session->question_ended_at);
+        $isTimeExpired = $now->greaterThanOrEqualTo($questionEndsAt);
+        $isExpired = $isManuallyClosed || $isTimeExpired;
+        
+        if (!$isExpired) {
             $questionInfo = [
                 'is_active' => true,
                 'total_duration' => $session->question_total_duration,
@@ -387,7 +391,7 @@ public function changeSlide(Request $request, $sessionId)
         } else {
             $questionInfo = [
                 'is_active' => false,
-                'reason' => 'expired',
+                'reason' => $isManuallyClosed ? 'manual' : 'timeout',
                 'question_ended_at' => $session->question_ended_at ?? $questionEndsAt->toISOString(),
             ];
         }
@@ -623,7 +627,7 @@ public function generateReport($sessionId)
         'data'   => $report,
     ]);
 }
- public function getUserRemainingTime($sessionId, Request $request)
+public function getUserRemainingTime($sessionId, Request $request)
 {
     $request->validate([
         'device_token' => 'required|string',
@@ -652,7 +656,7 @@ public function generateReport($sessionId)
     $now = now();
     $questionEndsAt = $session->question_started_at->copy()->addSeconds($session->question_total_duration);
     
-    // هل انتهى الوقت الكلي للسؤال؟
+    // هل انتهى الوقت الكلي للسؤال أو أغلقه المقدم يدوياً؟
     if ($now->greaterThanOrEqualTo($questionEndsAt) || $session->question_ended_at) {
         return response()->json([
             'status' => true,
@@ -669,7 +673,6 @@ public function generateReport($sessionId)
     $userStartedAt = cache()->get($userQuestionKey);
     
     if (!$userStartedAt) {
-        // أول مرة يفتح فيها هذا المستخدم هذا السؤال
         $userStartedAt = $now;
         cache()->put($userQuestionKey, $userStartedAt, 3600);
     }
@@ -696,6 +699,22 @@ public function generateReport($sessionId)
             'user_deadline' => $userDeadline->toISOString(),
             'user_duration' => $userDuration,
         ]
+    ]);
+}
+public function closeQuestion($sessionId)
+{
+    $session = Session::whereHas('presentation', fn($q) =>
+        $q->where('user_id', auth()->id())
+    )->where('id', $sessionId)->firstOrFail();
+
+    $session->update([
+        'question_ended_at' => now(),
+        'timer_expired' => true,
+    ]);
+
+    return response()->json([
+        'status' => true,
+        'message' => 'Question closed manually'
     ]);
 }
 }
