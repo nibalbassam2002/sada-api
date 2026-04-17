@@ -44,6 +44,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('sessions/{id}/report',          [SessionController::class, 'generateReport']);
     Route::get('/sessions/{sessionId}/user-remaining-time', [SessionController::class, 'getUserRemainingTime']);
     Route::post('/sessions/{sessionId}/close-question', [SessionController::class, 'closeQuestion']);
+    Route::post('sessions/{id}/reveal-results', [SessionController::class, 'revealResults']);
+    Route::post('sessions/{id}/hide-results',   [SessionController::class, 'hideResults']);
 });
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();

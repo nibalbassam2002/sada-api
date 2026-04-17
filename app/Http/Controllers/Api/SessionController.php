@@ -412,13 +412,14 @@ public function submitAnswer(Request $request, $id)
 {
     $data = $request->validate([
         'slide_id'     => 'required|string',
-        'answer_index' => 'nullable|integer',
-        'answer_value' => 'nullable|string',
+        'answer_index' => 'nullable|integer',  // MCQ + صح/غلط
+        'answer_value' => 'nullable|string',   // نصية حرة
+        'answer_rating'=> 'nullable|integer',  // rating (1-5 مثلاً)
         'device_token' => 'required|string',
         'time_taken'   => 'nullable|integer',
     ]);
 
-    $session = Session::findOrFail($id);
+    $session     = Session::findOrFail($id);
     $participant = $session->participants()
         ->where('device_token', $data['device_token'])
         ->first();
@@ -427,44 +428,67 @@ public function submitAnswer(Request $request, $id)
         return response()->json(['status' => false, 'message' => 'Participant not found'], 404);
     }
 
-    // ✅ التحقق من SessionQuestion
     $sq = \App\Models\SessionQuestion::where('session_id', $id)
         ->where('slide_id', $data['slide_id'])
         ->first();
 
-    if (!$sq) {
-        return response()->json(['status' => false, 'message' => 'Question not started yet'], 403);
+    if (!$sq || $sq->isExpired()) {
+        return response()->json(['status' => false, 'message' => 'Question is closed'], 403);
     }
 
-    if ($sq->isExpired()) {
-        return response()->json(['status' => false, 'message' => 'Question has been closed'], 403);
-    }
-
-    // ✅ التحقق من وقت المشارك الشخصي
     $userKey       = "user_{$participant->id}_sq_{$sq->id}_started_at";
     $userStartedAt = cache()->get($userKey);
 
     if (!$userStartedAt) {
-        return response()->json([
-            'status'  => false,
-            'message' => 'You must load the question first',
-        ], 403);
+        return response()->json(['status' => false, 'message' => 'You must load the question first'], 403);
     }
 
-    $userDeadline = $userStartedAt->copy()->addSeconds($sq->user_duration);
-
-    if (now()->greaterThan($userDeadline)) {
-        return response()->json(['status' => false, 'message' => 'Your time to answer has expired'], 403);
+    if (now()->greaterThan($userStartedAt->copy()->addSeconds($sq->user_duration))) {
+        return response()->json(['status' => false, 'message' => 'Your time has expired'], 403);
     }
 
-    // ✅ منع التكرار
-    $exists = \App\Models\Response::where('session_id', $id)
+    if (\App\Models\Response::where('session_id', $id)
         ->where('slide_id', $data['slide_id'])
         ->where('participant_id', $participant->id)
-        ->exists();
-
-    if ($exists) {
+        ->exists()) {
         return response()->json(['status' => false, 'message' => 'Already answered'], 409);
+    }
+
+    // ✅ كشف نوع السؤال وتحديد الصحة
+    $slide        = $session->presentation->slides()->where('id', $data['slide_id'])->first();
+    $content      = $slide ? (is_string($slide->content) ? json_decode($slide->content, true) : $slide->content) : [];
+    $questionData = $content['questionData'] ?? null;
+    $questionType = $content['questionType'] ?? $questionData['type'] ?? 'mcq';
+
+    $isCorrect = null;
+    $points    = 0;
+
+    switch (strtolower($questionType)) {
+        case 'mcq':
+        case 'true_false':
+            $correctIndex = $questionData['correct_answer'] ?? $questionData['correctAnswer'] ?? null;
+            if (!is_null($correctIndex) && isset($data['answer_index'])) {
+                $isCorrect = ((int) $data['answer_index'] === (int) $correctIndex);
+                if ($isCorrect) {
+                    $maxTime = $sq->user_duration;
+                    $taken   = min($data['time_taken'] ?? $maxTime, $maxTime);
+                    $points  = (int) round(1000 * (1 - ($taken / $maxTime) * 0.5));
+                }
+            }
+            break;
+
+        case 'text':
+        case 'open':
+            // النصية ما فيها صح/غلط تلقائي — المقدم يصحح لاحقاً
+            $isCorrect = null;
+            $points    = 0;
+            break;
+
+        case 'rating':
+            // Rating ما فيها صح/غلط — بس نحفظ التقييم
+            $isCorrect = null;
+            $points    = 0;
+            break;
     }
 
     $response = \App\Models\Response::create([
@@ -473,12 +497,181 @@ public function submitAnswer(Request $request, $id)
         'participant_id' => $participant->id,
         'answer_index'   => $data['answer_index'] ?? null,
         'answer_value'   => $data['answer_value'] ?? null,
+        'answer_rating'  => $data['answer_rating'] ?? null,
         'time_taken'     => $data['time_taken'] ?? 0,
+        'is_correct'     => $isCorrect,
+        'points'         => $points,
     ]);
 
-    return response()->json(['status' => true, 'data' => $response]);
+    // ✅ الرد للمشارك: فقط تأكيد الاستلام بدون أي تصحيح
+    return response()->json([
+        'status'  => true,
+        'message' => 'Answer submitted successfully',
+        'data'    => ['response_id' => $response->id],
+    ]);
+}
+public function questionReport($sessionId, $slideId)
+{
+    $session = Session::with('presentation')->findOrFail($sessionId);
+
+    $sq = \App\Models\SessionQuestion::where('session_id', $sessionId)
+        ->where('slide_id', (string) $slideId)
+        ->first();
+
+    if (!$sq) {
+        return response()->json(['status' => false, 'message' => 'Question not found'], 404);
+    }
+
+    // بيانات الشريحة
+    $slide        = $session->presentation->slides()->where('id', $slideId)->first();
+    $content      = $slide ? (is_string($slide->content) ? json_decode($slide->content, true) : $slide->content) : [];
+    $questionData = $content['questionData'] ?? null;
+    $questionType = strtolower($content['questionType'] ?? $questionData['type'] ?? 'mcq');
+    $questionText = $questionData['question'] ?? $content['title'] ?? '';
+    $options      = $questionData['options'] ?? $questionData['answers'] ?? [];
+    $correctIndex = $questionData['correct_answer'] ?? $questionData['correctAnswer'] ?? null;
+
+    $totalParticipants = $session->participants()->count();
+    $responses         = \App\Models\Response::where('session_id', $sessionId)
+        ->where('slide_id', (string) $slideId)
+        ->with('participant:id,nickname')
+        ->get();
+
+    $totalResponses = $responses->count();
+    $noAnswer       = max(0, $totalParticipants - $totalResponses);
+    $avgTime        = $totalResponses > 0 ? round($responses->avg('time_taken'), 1) : null;
+
+    // ✅ إحصائيات حسب نوع السؤال
+    $typeStats = match($questionType) {
+
+        'mcq', 'true_false' => $this->buildChoiceStats(
+            $responses, $options, $correctIndex, $totalResponses
+        ),
+
+        'text', 'open' => $this->buildTextStats($responses),
+
+        'rating' => $this->buildRatingStats($responses),
+
+        default => [],
+    };
+
+    // عدد الصح والغلط (فقط لـ MCQ و true_false)
+    $correctCount = in_array($questionType, ['mcq', 'true_false'])
+        ? $responses->where('is_correct', true)->count()
+        : null;
+
+    $wrongCount = in_array($questionType, ['mcq', 'true_false'])
+        ? $responses->where('is_correct', false)->count()
+        : null;
+
+    // Leaderboard — أعلى 10 (فقط لـ MCQ و true_false)
+    $leaderboard = null;
+    if (in_array($questionType, ['mcq', 'true_false'])) {
+        $leaderboard = \App\Models\Response::where('session_id', $sessionId)
+            ->where('slide_id', (string) $slideId)
+            ->join('participants', 'responses.participant_id', '=', 'participants.id')
+            ->select('participants.nickname', 'responses.points', 'responses.time_taken', 'responses.is_correct')
+            ->orderByDesc('responses.points')
+            ->orderBy('responses.time_taken')
+            ->limit(10)
+            ->get();
+    }
+
+    return response()->json([
+        'status' => true,
+        'data'   => [
+            'question' => [
+                'slide_id'      => $slideId,
+                'type'          => $questionType,
+                'text'          => $questionText,
+                'correct_index' => $correctIndex,
+                'options'       => $options,
+            ],
+
+            'timing' => [
+                'started_at'     => $sq->started_at,
+                'ended_at'       => $sq->ended_at ?? $sq->globalEndsAt(),
+                'closed_reason'  => $sq->closed_reason ?? 'timeout',
+                'total_duration' => $sq->total_duration,
+                'user_duration'  => $sq->user_duration,
+            ],
+
+            'stats' => [
+                'total_participants'  => $totalParticipants,
+                'total_responses'     => $totalResponses,
+                'no_answer_count'     => $noAnswer,
+                'correct_count'       => $correctCount,
+                'wrong_count'         => $wrongCount,
+                'correct_percent'     => ($totalResponses > 0 && !is_null($correctCount))
+                    ? round(($correctCount / $totalResponses) * 100)
+                    : null,
+                'participation_rate'  => $totalParticipants > 0
+                    ? round(($totalResponses / $totalParticipants) * 100)
+                    : 0,
+                'avg_time_seconds'    => $avgTime,
+                'type_stats'          => $typeStats,
+            ],
+
+            'leaderboard'  => $leaderboard,
+            'show_results' => $session->show_results ?? false,
+        ]
+    ]);
 }
 
+// ✅ إحصائيات MCQ و true_false
+private function buildChoiceStats($responses, $options, $correctIndex, $totalResponses): array
+{
+    $stats = [];
+    foreach ($options as $index => $option) {
+        $count = $responses->where('answer_index', $index)->count();
+        $stats[] = [
+            'index'      => $index,
+            'text'       => is_array($option) ? ($option['text'] ?? '') : $option,
+            'count'      => $count,
+            'percent'    => $totalResponses > 0 ? round(($count / $totalResponses) * 100) : 0,
+            'is_correct' => ($index === $correctIndex),
+        ];
+    }
+    return $stats;
+}
+
+// ✅ إحصائيات النصية الحرة
+private function buildTextStats($responses): array
+{
+    return $responses
+        ->whereNotNull('answer_value')
+        ->map(fn($r) => [
+            'nickname' => $r->participant->nickname ?? 'Anonymous',
+            'answer'   => $r->answer_value,
+            'time_taken' => $r->time_taken,
+        ])
+        ->values()
+        ->toArray();
+}
+
+// ✅ إحصائيات Rating
+private function buildRatingStats($responses): array
+{
+    $ratings = $responses->whereNotNull('answer_rating');
+    if ($ratings->isEmpty()) return [];
+
+    $distribution = [];
+    for ($i = 1; $i <= 5; $i++) {
+        $count = $ratings->where('answer_rating', $i)->count();
+        $distribution[$i] = [
+            'rating'  => $i,
+            'count'   => $count,
+            'percent' => $ratings->count() > 0
+                ? round(($count / $ratings->count()) * 100)
+                : 0,
+        ];
+    }
+
+    return [
+        'average'      => round($ratings->avg('answer_rating'), 2),
+        'distribution' => array_values($distribution),
+    ];
+}
 public function revealResults(Request $request, $sessionId)
 {
     $session = Session::whereHas('presentation', fn($q) =>
