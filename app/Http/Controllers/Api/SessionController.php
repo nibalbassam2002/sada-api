@@ -473,26 +473,19 @@ class SessionController extends Controller
         $isCorrect = null;
         $points    = 0;
 
-        switch (strtolower($questionType)) {
-            case 'mcq':
-            case 'true_false':
-                $correctIndex = $questionData['correct_answer'] ?? $questionData['correctAnswer'] ?? null;
-                if (!is_null($correctIndex) && isset($data['answer_index'])) {
-                    $isCorrect = ((int) $data['answer_index'] === (int) $correctIndex);
-                    if ($isCorrect) {
-                        $maxTime = $sq->user_duration;
-                        $taken   = min($data['time_taken'] ?? $maxTime, $maxTime);
-                        $points  = (int) round(1000 * (1 - ($taken / $maxTime) * 0.5));
-                    }
-                }
-                break;
-            case 'text':
-            case 'open':
-            case 'rating':
-                $isCorrect = null;
-                $points    = 0;
-                break;
+       $choiceTypes = ['mcq', 'true_false', 'multiple-choice', 'truefalse'];
+
+if (in_array(strtolower($questionType), $choiceTypes)) {
+    $correctIndex = $questionData['correct_answer'] ?? $questionData['correctAnswer'] ?? null;
+    if (!is_null($correctIndex) && isset($data['answer_index'])) {
+        $isCorrect = ((int) $data['answer_index'] === (int) $correctIndex);
+        if ($isCorrect) {
+            $maxTime = $sq->user_duration;
+            $taken   = min($data['time_taken'] ?? $maxTime, $maxTime);
+            $points  = (int) round(1000 * (1 - ($taken / $maxTime) * 0.5));
         }
+    }
+}
 
         $response = \App\Models\Response::create([
             'session_id'     => $id,
@@ -741,18 +734,20 @@ class SessionController extends Controller
         $noAnswer       = max(0, $totalParticipants - $totalResponses);
         $avgTime        = $totalResponses > 0 ? round($responses->avg('time_taken'), 1) : null;
 
-        $typeStats = match($questionType) {
-            'mcq', 'true_false' => $this->buildChoiceStats($responses, $options, $correctIndex, $totalResponses),
-            'text', 'open'      => $this->buildTextStats($responses),
-            'rating'            => $this->buildRatingStats($responses),
-            default             => [],
-        };
+       $isChoiceType = in_array($questionType, ['mcq', 'true_false', 'multiple-choice', 'truefalse']);
 
-        $correctCount = in_array($questionType, ['mcq', 'true_false']) ? $responses->where('is_correct', true)->count()  : null;
-        $wrongCount   = in_array($questionType, ['mcq', 'true_false']) ? $responses->where('is_correct', false)->count() : null;
+$typeStats = match(true) {
+    $isChoiceType                                    => $this->buildChoiceStats($responses, $options, $correctIndex, $totalResponses),
+    in_array($questionType, ['text', 'open'])        => $this->buildTextStats($responses),
+    $questionType === 'rating'                       => $this->buildRatingStats($responses),
+    default                                          => [],
+};
+
+        $correctCount = $isChoiceType ? $responses->where('is_correct', true)->count()  : null;
+        $wrongCount   = $isChoiceType ? $responses->where('is_correct', false)->count() : null;
 
         $leaderboard = null;
-        if (in_array($questionType, ['mcq', 'true_false'])) {
+        if ($isChoiceType) {
             $leaderboard = \App\Models\Response::where('session_id', $sessionId)
                 ->where('slide_id', (string) $slideId)
                 ->join('participants', 'responses.participant_id', '=', 'participants.id')
