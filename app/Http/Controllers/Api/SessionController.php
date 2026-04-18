@@ -732,7 +732,9 @@ if (in_array(strtolower($questionType), $choiceTypes)) {
 
         $totalResponses = $responses->count();
         $noAnswer       = max(0, $totalParticipants - $totalResponses);
-        $avgTime        = $totalResponses > 0 ? round($responses->avg('time_taken'), 1) : null;
+        $avgTime = $responses->where('time_taken', '>', 0)->count() > 0
+    ? round($responses->where('time_taken', '>', 0)->avg('time_taken'), 1)
+    : null;
 
        $isChoiceType = in_array($questionType, ['mcq', 'true_false', 'multiple-choice', 'truefalse']);
 
