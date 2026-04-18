@@ -27,6 +27,7 @@ Route::post('sessions/{id}/answer',              [SessionController::class, 'sub
 Route::get( 'sessions/{id}/results/{slideId}',   [SessionController::class, 'slideResults']);
 Route::get( 'sessions/{id}/slide-results/{slideId}', [SessionController::class, 'slideResults']);
 Route::get('sessions/{id}/question-report/{slideId}', [SessionController::class, 'questionReport']);
+Route::get('sessions/{id}/user-remaining-time', [SessionController::class, 'getUserRemainingTime']);
 // Protected Routes (auth required — presenter)
 Route::middleware('auth:sanctum')->group(function () {
 
@@ -59,7 +60,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('sessions/{id}/participants',        [SessionController::class, 'participants']);
     Route::get('sessions/{id}/report',              [SessionController::class, 'generateReport']);
-    Route::get('sessions/{id}/user-remaining-time', [SessionController::class, 'getUserRemainingTime']);
+
 });
 
 // Dev Only — Reset DB
