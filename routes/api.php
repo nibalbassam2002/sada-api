@@ -6,9 +6,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\PresentationController;
 use App\Http\Controllers\Api\SessionController;
 
-// ══════════════════════════════════════════════════════════
 // Auth Routes
-// ══════════════════════════════════════════════════════════
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login',    [AuthController::class, 'login']);
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
@@ -20,9 +18,7 @@ Route::get('/reset-password/{token}', function ($token) {
     return redirect("http://localhost:5173/reset-password?token=$token");
 })->name('password.reset');
 
-// ══════════════════════════════════════════════════════════
 // Public Session Routes (no auth — participants)
-// ══════════════════════════════════════════════════════════
 Route::get( 'sessions/{code}/info',              [SessionController::class, 'info']);
 Route::post('sessions/join',                     [SessionController::class, 'join']);
 Route::get( 'sessions/{id}/status',              [SessionController::class, 'status']);
@@ -30,16 +26,14 @@ Route::get( 'sessions/{id}/current-slide',       [SessionController::class, 'cur
 Route::post('sessions/{id}/answer',              [SessionController::class, 'submitAnswer']);
 Route::get( 'sessions/{id}/results/{slideId}',   [SessionController::class, 'slideResults']);
 Route::get( 'sessions/{id}/slide-results/{slideId}', [SessionController::class, 'slideResults']);
-
-// ══════════════════════════════════════════════════════════
+Route::get('sessions/{id}/question-report/{slideId}', [SessionController::class, 'questionReport']);
 // Protected Routes (auth required — presenter)
-// ══════════════════════════════════════════════════════════
 Route::middleware('auth:sanctum')->group(function () {
 
-    // ── User ──────────────────────────────────────────────
+    // User 
     Route::get('/user', fn(Request $request) => $request->user());
 
-    // ── Presentations ─────────────────────────────────────
+    // Presentations 
     Route::post('/presentations/import-pptx',        [PresentationController::class, 'importPptx']);
     Route::get( '/presentations',                    [PresentationController::class, 'index']);
     Route::post('/presentations',                    [PresentationController::class, 'store']);
@@ -51,7 +45,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/presentations/{id}/title',        [PresentationController::class, 'updateTitle']);
     Route::post('/presentations/{id}/sync',          [PresentationController::class, 'syncSlides']);
 
-    // ── Sessions (presenter) ──────────────────────────────
+    // Sessions (presenter) 
     Route::post('presentations/{id}/sessions/start', [SessionController::class, 'start']);
     Route::get( 'presentations/{id}/sessions/current',[SessionController::class, 'current']);
 
@@ -68,9 +62,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('sessions/{id}/user-remaining-time', [SessionController::class, 'getUserRemainingTime']);
 });
 
-// ══════════════════════════════════════════════════════════
 // Dev Only — Reset DB
-// ══════════════════════════════════════════════════════════
 Route::get('/update-db', function () {
     \Illuminate\Support\Facades\Artisan::call('migrate:fresh --seed --force');
     return 'Database Wiped & Re-Created Successfully with Full Details!';
