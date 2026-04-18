@@ -473,7 +473,7 @@ class SessionController extends Controller
         $isCorrect = null;
         $points    = 0;
 
-       $choiceTypes = ['mcq', 'true_false', 'multiple-choice', 'truefalse'];
+       $choiceTypes = ['mcq', 'true_false', 'true-false', 'multiple-choice', 'truefalse'];
 
 if (in_array(strtolower($questionType), $choiceTypes)) {
     $correctIndex = $questionData['correct_answer'] ?? $questionData['correctAnswer'] ?? null;
@@ -736,9 +736,9 @@ if (in_array(strtolower($questionType), $choiceTypes)) {
     ? round($responses->where('time_taken', '>', 0)->avg('time_taken'), 1)
     : null;
 
-       $isChoiceType = in_array($questionType, ['mcq', 'true_false', 'multiple-choice', 'truefalse']);
+       $isChoiceType = in_array($questionType, ['mcq', 'true_false', 'true-false', 'multiple-choice', 'truefalse']);
+        $isChoiceType = in_array($questionType, ['mcq', 'true_false', 'true-false', 'multiple-choice', 'truefalse']);
 
-        $isChoiceType = in_array($questionType, ['mcq', 'true_false', 'multiple-choice', 'truefalse']);
 
         if ($isChoiceType) {
             $typeStats = $this->buildChoiceStats($responses, $options, $correctIndex, $totalResponses);
