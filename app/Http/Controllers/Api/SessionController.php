@@ -753,8 +753,8 @@ if (in_array(strtolower($questionType), $choiceTypes)) {
 
         $leaderboard = null;
         if ($isChoiceType) {
-            $leaderboard = \App\Models\Response::where('session_id', $sessionId)
-                ->where('slide_id', (string) $slideId)
+            $leaderboard = \App\Models\Response::where('responses.session_id', $sessionId)
+                ->where('responses.slide_id', (string) $slideId)
                 ->join('participants', 'responses.participant_id', '=', 'participants.id')
                 ->select('participants.nickname', 'responses.points', 'responses.time_taken', 'responses.is_correct')
                 ->orderByDesc('responses.points')
