@@ -774,9 +774,9 @@ if (in_array(strtolower($questionType), $choiceTypes)) {
                     'type'          => $questionType,
                     'text'          => $questionText,
                     'correct_index' => $correctIndex,
-                    'correct_answer' => isset($options[$correctIndex])
-    ? (is_array($options[$correctIndex]) ? $options[$correctIndex]['text'] : $options[$correctIndex])
-    : null,
+                    'correct_answer' => isset($options[(int)$correctIndex])
+                    ? (is_array($options[(int)$correctIndex]) ? $options[(int)$correctIndex]['text'] : $options[(int)$correctIndex])
+                    : null,
                     'options'       => $options,
                 ],
                 'timing' => [
@@ -815,7 +815,7 @@ if (in_array(strtolower($questionType), $choiceTypes)) {
                 'text'       => is_array($option) ? ($option['text'] ?? '') : $option,
                 'count'      => $count,
                 'percent'    => $totalResponses > 0 ? round(($count / $totalResponses) * 100) : 0,
-                'is_correct' => ($index === $correctIndex),
+                'is_correct' => ((int)$index === (int)$correctIndex),
             ];
         }
         return $stats;
