@@ -736,12 +736,17 @@ if (in_array(strtolower($questionType), $choiceTypes)) {
 
        $isChoiceType = in_array($questionType, ['mcq', 'true_false', 'multiple-choice', 'truefalse']);
 
-$typeStats = match(true) {
-    $isChoiceType                                    => $this->buildChoiceStats($responses, $options, $correctIndex, $totalResponses),
-    in_array($questionType, ['text', 'open'])        => $this->buildTextStats($responses),
-    $questionType === 'rating'                       => $this->buildRatingStats($responses),
-    default                                          => [],
-};
+        $isChoiceType = in_array($questionType, ['mcq', 'true_false', 'multiple-choice', 'truefalse']);
+
+        if ($isChoiceType) {
+            $typeStats = $this->buildChoiceStats($responses, $options, $correctIndex, $totalResponses);
+        } elseif (in_array($questionType, ['text', 'open'])) {
+            $typeStats = $this->buildTextStats($responses);
+        } elseif ($questionType === 'rating') {
+            $typeStats = $this->buildRatingStats($responses);
+        } else {
+            $typeStats = [];
+        }
 
         $correctCount = $isChoiceType ? $responses->where('is_correct', true)->count()  : null;
         $wrongCount   = $isChoiceType ? $responses->where('is_correct', false)->count() : null;
