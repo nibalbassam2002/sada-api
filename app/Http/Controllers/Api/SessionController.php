@@ -771,6 +771,9 @@ if (in_array(strtolower($questionType), $choiceTypes)) {
                     'type'          => $questionType,
                     'text'          => $questionText,
                     'correct_index' => $correctIndex,
+                    'correct_answer' => isset($options[$correctIndex])
+    ? (is_array($options[$correctIndex]) ? $options[$correctIndex]['text'] : $options[$correctIndex])
+    : null,
                     'options'       => $options,
                 ],
                 'timing' => [
