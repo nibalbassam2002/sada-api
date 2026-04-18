@@ -450,11 +450,7 @@ class SessionController extends Controller
         }
 
         $userKey       = "user_{$participant->id}_sq_{$sq->id}_started_at";
-        $userStartedAt = cache()->get($userKey);
-
-        if (!$userStartedAt) {
-            return response()->json(['status' => false, 'message' => 'You must load the question first'], 403);
-        }
+        $userStartedAt = cache()->remember($userKey, 3600, fn() => now());
 
         if (now()->greaterThan($userStartedAt->copy()->addSeconds($sq->user_duration))) {
             return response()->json(['status' => false, 'message' => 'Your time has expired'], 403);
