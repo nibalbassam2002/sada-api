@@ -490,7 +490,7 @@ public function submitAnswer(Request $request, $id)
     }
 
     // ✅ حساب is_correct و points
-    $isCorrect = null;
+    $isCorrect = false;
     $points    = 0;
 
     $choiceTypes = ['mcq', 'true_false', 'true-false', 'multiple-choice', 'truefalse'];
