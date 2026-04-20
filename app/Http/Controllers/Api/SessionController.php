@@ -438,8 +438,15 @@ public function submitAnswer(Request $request, $id)
         ->first();
 
     if (!$participant) {
-        return response()->json(['status' => false, 'message' => 'Participant not found'], 404);
-    }
+    return response()->json([
+        'status'  => false,
+        'message' => 'Participant not found',
+        'debug'   => [
+            'sent_token'   => $request->device_token,
+            'valid_tokens' => $session->participants()->pluck('device_token'),
+        ]
+    ], 404);
+}
 
     // ✅ جلب بيانات الشريحة أولاً دائماً
     $slide        = $session->presentation->slides()->where('id', $request->slide_id)->first();
