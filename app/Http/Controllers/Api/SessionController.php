@@ -348,7 +348,7 @@ class SessionController extends Controller
             'titleStyle'   => $content['titleStyle']   ?? (object)[],
             'subtitleStyle'=> $content['subtitleStyle']?? (object)[],
             'contentStyle' => $content['contentStyle'] ?? (object)[],
-            'questionData' => $content['questionData'] ?? null,
+            'questionData' => $content['questionData'] ?? $content['question_data'] ?? null,
             'questionType' => $content['questionType'] ?? null,
         ]);
 
@@ -429,7 +429,6 @@ public function submitAnswer(Request $request, $id)
         'time_taken'    => 'nullable|integer',
     ]);
 
-    // ✅ قراءة answer_index بشكل صحيح
     $rawIndex    = $request->input('answer_index');
     $answerIndex = ($rawIndex !== null && $rawIndex !== '') ? (int) $rawIndex : null;
 
@@ -440,6 +439,32 @@ public function submitAnswer(Request $request, $id)
 
     if (!$participant) {
         return response()->json(['status' => false, 'message' => 'Participant not found'], 404);
+    }
+
+    // ✅ جلب بيانات الشريحة أولاً دائماً
+    $slide        = $session->presentation->slides()->where('id', $request->slide_id)->first();
+    $content      = [];
+    $questionData = null;
+    $questionType = 'mcq';
+
+    if ($slide) {
+        $content      = is_string($slide->content)
+            ? (json_decode($slide->content, true) ?? [])
+            : ($slide->content ?? []);
+        $questionData = $content['questionData'] ?? null;
+        $questionType = strtolower($content['questionType'] ?? $questionData['type'] ?? 'mcq');
+    }
+
+    // ✅ إذا answer_index مش موجود، استخرجه من answer_value
+    if (is_null($answerIndex) && $request->filled('answer_value') && $questionData) {
+        $options = $questionData['options'] ?? $questionData['answers'] ?? [];
+        foreach ($options as $idx => $option) {
+            $optText = is_array($option) ? ($option['text'] ?? '') : $option;
+            if (mb_strtolower(trim($optText)) === mb_strtolower(trim($request->answer_value))) {
+                $answerIndex = $idx;
+                break;
+            }
+        }
     }
 
     $sq = \App\Models\SessionQuestion::where('session_id', $id)
@@ -464,21 +489,6 @@ public function submitAnswer(Request $request, $id)
         return response()->json(['status' => false, 'message' => 'Already answered'], 409);
     }
 
-    // ✅ جلب بيانات الشريحة
-    $slide   = $session->presentation->slides()->where('id', $request->slide_id)->first();
-    $content = [];
-
-    if ($slide) {
-        if (is_string($slide->content)) {
-            $content = json_decode($slide->content, true) ?? [];
-        } elseif (is_array($slide->content)) {
-            $content = $slide->content;
-        }
-    }
-
-    $questionData = $content['questionData'] ?? null;
-    $questionType = strtolower($content['questionType'] ?? $questionData['type'] ?? 'mcq');
-
     // ✅ حساب is_correct و points
     $isCorrect = null;
     $points    = 0;
@@ -486,7 +496,6 @@ public function submitAnswer(Request $request, $id)
     $choiceTypes = ['mcq', 'true_false', 'true-false', 'multiple-choice', 'truefalse'];
 
     if (in_array($questionType, $choiceTypes) && !is_null($answerIndex)) {
-        // ✅ ابحث عن الإجابة الصحيحة في كل الأماكن الممكنة
         $correctIndex = $questionData['correctAnswer']
             ?? $questionData['correct_answer']
             ?? $questionData['correctIndex']
@@ -495,12 +504,11 @@ public function submitAnswer(Request $request, $id)
         \Log::info('ANSWER DEBUG', [
             'answer_index'  => $answerIndex,
             'correct_index' => $correctIndex,
-            'questionData'  => $questionData,
             'questionType'  => $questionType,
         ]);
 
         if (!is_null($correctIndex)) {
-            $isCorrect = ($answerIndex === (int) $correctIndex);
+            $isCorrect = ((int) $answerIndex === (int) $correctIndex);
             if ($isCorrect) {
                 $maxTime = $sq->user_duration;
                 $taken   = min($request->time_taken ?? $maxTime, $maxTime);
@@ -513,7 +521,7 @@ public function submitAnswer(Request $request, $id)
         'session_id'     => $id,
         'slide_id'       => $request->slide_id,
         'participant_id' => $participant->id,
-        'answer_index'   => $answerIndex,
+        'answer_index'   => $answerIndex,  // ✅ الآن محفوظ صح
         'answer_value'   => $request->answer_value  ?? null,
         'answer_rating'  => $request->answer_rating ?? null,
         'time_taken'     => $request->time_taken    ?? 0,
@@ -524,7 +532,11 @@ public function submitAnswer(Request $request, $id)
     return response()->json([
         'status'  => true,
         'message' => 'Answer submitted successfully',
-        'data'    => ['response_id' => $response->id],
+        'data'    => [
+            'response_id' => $response->id,
+            'is_correct'  => $isCorrect,  // ✅ أرجعها للـ frontend
+            'points'      => $points,
+        ],
     ]);
 }
 
