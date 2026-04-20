@@ -431,7 +431,9 @@ class SessionController extends Controller
             'device_token'  => 'required|string',
             'time_taken'    => 'nullable|integer',
         ]);
-
+        $answerIndex = is_numeric($request->input('answer_index')) 
+            ? (int) $request->input('answer_index') 
+            : null;
         $session     = Session::findOrFail($id);
         $participant = $session->participants()
             ->where('device_token', $data['device_token'])
@@ -497,7 +499,7 @@ if (in_array(strtolower($questionType), $choiceTypes)) {
             'session_id'     => $id,
             'slide_id'       => $data['slide_id'],
             'participant_id' => $participant->id,
-            'answer_index'   => $data['answer_index']  ?? null,
+            'answer_index'   => $answerIndex,
             'answer_value'   => $data['answer_value']  ?? null,
             'answer_rating'  => $data['answer_rating'] ?? null,
             'time_taken'     => $data['time_taken']    ?? 0,
