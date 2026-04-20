@@ -463,20 +463,26 @@ class SessionController extends Controller
             return response()->json(['status' => false, 'message' => 'Already answered'], 409);
         }
 
-        $slide        = $session->presentation->slides()->where('id', $data['slide_id'])->first();
-        $content      = $slide
-            ? (is_string($slide->content) ? json_decode($slide->content, true) : $slide->content)
-            : [];
-        $questionData = $content['questionData'] ?? null;
-        $questionType = $content['questionType'] ?? $questionData['type'] ?? 'mcq';
+$slide        = $session->presentation->slides()->where('id', $data['slide_id'])->first();
+$content      = $slide
+    ? (is_string($slide->content) ? json_decode($slide->content, true) : $slide->content)
+    : [];
+$questionData = $content['questionData'] ?? null;
 
-        $isCorrect = null;
-        $points    = 0;
+// ✅ اقرأ questionType بعد تعريف $questionData
+$questionType = $content['questionType'] ?? $questionData['type'] ?? 'mcq';
 
-       $choiceTypes = ['mcq', 'true_false', 'true-false', 'multiple-choice', 'truefalse'];
+$isCorrect = null;
+$points    = 0;
+
+$choiceTypes = ['mcq', 'true_false', 'true-false', 'multiple-choice', 'truefalse'];
 
 if (in_array(strtolower($questionType), $choiceTypes)) {
-    $correctIndex = $questionData['correct_answer'] ?? $questionData['correctAnswer'] ?? null;
+    // ✅ correctAnswer هو الاسم الصحيح حسب قاعدة البيانات
+    $correctIndex = $questionData['correctAnswer'] 
+        ?? $questionData['correct_answer'] 
+        ?? null;
+    
     if (!is_null($correctIndex) && isset($data['answer_index'])) {
         $isCorrect = ((int) $data['answer_index'] === (int) $correctIndex);
         if ($isCorrect) {
