@@ -477,6 +477,13 @@ public function submitAnswer(Request $request, $id)
     $sq = \App\Models\SessionQuestion::where('session_id', $id)
         ->where('slide_id', $request->slide_id)
         ->first();
+        if (!$sq) {
+    $session = Session::findOrFail($id);
+    $sq = \App\Models\SessionQuestion::where('session_id', $id)
+        ->where('slide_id', (string) $session->current_slide_id)
+        ->whereNull('ended_at')
+        ->first();
+}
 
     if (!$sq || $sq->isExpired()) {
         return response()->json(['status' => false, 'message' => 'Question is closed'], 403);
