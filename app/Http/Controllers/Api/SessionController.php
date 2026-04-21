@@ -537,14 +537,25 @@ public function submitAnswer(Request $request, $id)
     ]);
 
     return response()->json([
-        'status'  => true,
-        'message' => 'Answer submitted successfully',
-        'data'    => [
-            'response_id' => $response->id,
-            'is_correct'  => $isCorrect,  // ✅ أرجعها للـ frontend
-            'points'      => $points,
+    'status'  => true,
+    'message' => 'Answer submitted successfully',
+    'data'    => [
+        'response_id'  => $response->id,
+        'is_correct'   => $isCorrect,
+        'points'       => $points,
+        // ← أضف هاد مؤقتاً للتشخيص
+        '_debug' => [
+            'answer_index_sent'    => $request->input('answer_index'),
+            'answer_index_parsed'  => $answerIndex,
+            'correct_index'        => $correctIndex ?? 'NOT FOUND',
+            'question_type'        => $questionType,
+            'question_data_keys'   => $questionData ? array_keys($questionData) : 'NULL',
+            'correct_answer_raw'   => $questionData['correctAnswer'] ?? 'missing',
+            'correct_answer2_raw'  => $questionData['correct_answer'] ?? 'missing',
+            'correct_index_raw'    => $questionData['correctIndex'] ?? 'missing',
         ],
-    ]);
+    ],
+]);
 }
 
     // ══════════════════════════════════════════════════════
