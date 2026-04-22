@@ -25,6 +25,7 @@ class Presentation extends Model
 
     public function sessions(): HasMany
     {
-        return $this->hasMany(Session::class);
+        return $this->hasMany(Session::class, 'presentation_id');
     }
+ 
 }
