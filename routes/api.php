@@ -61,7 +61,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('sessions/{id}/participants',        [SessionController::class, 'participants']);
     Route::get('sessions/{id}/report',              [SessionController::class, 'generateReport']);
     Route::put('/user/profile',  [AuthController::class, 'updateProfile']);
-Route::put('/user/password', [AuthController::class, 'updatePassword']);
+    Route::put('/user/password', [AuthController::class, 'updatePassword']);
+    Route::post('/user/set-password', [AuthController::class, 'setPassword']);
 
 });
 

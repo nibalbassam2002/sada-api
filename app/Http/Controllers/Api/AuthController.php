@@ -186,4 +186,21 @@ public function updatePassword(Request $request)
         'message' => 'Password updated successfully',
     ]);
 }
+public function setPassword(Request $request)
+{
+    $request->validate([
+        'password' => 'required|string|min:8|confirmed',
+    ]);
+
+    $user = auth()->user();
+
+    // منع التعديل لو عنده كلمة سر أصلاً
+    if ($user->password) {
+        return response()->json(['status' => false, 'message' => 'Use change password instead.'], 422);
+    }
+
+    $user->update(['password' => \Hash::make($request->password)]);
+
+    return response()->json(['status' => true, 'message' => 'Password set successfully']);
+}
 }
