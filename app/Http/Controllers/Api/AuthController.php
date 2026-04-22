@@ -141,4 +141,49 @@ class AuthController extends Controller
             return response()->json(['message' => 'Google authentication failed', 'error' => $e->getMessage()], 500);
         }
     }
+    public function updateProfile(Request $request)
+{
+    $request->validate([
+        'name'  => 'required|string|max:255',
+        'email' => 'required|email|unique:users,email,' . auth()->id(),
+    ]);
+
+    $user = auth()->user();
+    $user->update([
+        'name'  => $request->name,
+        'email' => $request->email,
+    ]);
+
+    return response()->json([
+        'status'  => true,
+        'message' => 'Profile updated successfully',
+        'data'    => $user,
+    ]);
+}
+
+public function updatePassword(Request $request)
+{
+    $request->validate([
+        'current_password' => 'required|string',
+        'password'         => 'required|string|min:8|confirmed',
+    ]);
+
+    $user = auth()->user();
+
+    if (!\Hash::check($request->current_password, $user->password)) {
+        return response()->json([
+            'status'  => false,
+            'message' => 'Current password is incorrect',
+        ], 422);
+    }
+
+    $user->update([
+        'password' => \Hash::make($request->password),
+    ]);
+
+    return response()->json([
+        'status'  => true,
+        'message' => 'Password updated successfully',
+    ]);
+}
 }
