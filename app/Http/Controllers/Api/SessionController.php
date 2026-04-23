@@ -71,7 +71,7 @@ class SessionController extends Controller
     }
 
     // ══════════════════════════════════════════════════════
-    // changeSlide — ✅ يحفظ السؤال من الـ DB مباشرة
+    // changeSlide ✅ مصلّح — يحذف القديم المنتهي ويخلق جديد
     // ══════════════════════════════════════════════════════
     public function changeSlide(Request $request, $sessionId)
     {
@@ -100,7 +100,6 @@ class SessionController extends Controller
 
         $session->update($updateData);
 
-        // ✅ اجلب بيانات الشريحة من DB مباشرة — مش من الـ request
         $sessionQuestion = null;
         $dbSlide = $session->presentation->slides()->where('id', $slideId)->first();
 
@@ -116,13 +115,19 @@ class SessionController extends Controller
                 $totalDuration = (int) ($questionData['total_duration'] ?? 900);
                 $userDuration  = (int) ($questionData['user_duration']  ?? 30);
 
-                // ✅ ابحث أولاً — لو موجود لا تلمسه
+                // ✅ ابحث عن سؤال موجود
                 $sessionQuestion = \App\Models\SessionQuestion::where('session_id', $sessionId)
                     ->where('slide_id', $slideId)
                     ->first();
 
+                // ✅ لو موجود ومنتهي أو مغلق — احذفه وابدأ جديد
+                if ($sessionQuestion && ($sessionQuestion->isExpired() || $sessionQuestion->ended_at !== null)) {
+                    $sessionQuestion->delete();
+                    $sessionQuestion = null;
+                }
+
+                // ✅ لو مش موجود — احفظه
                 if (!$sessionQuestion) {
-                    // ✅ سؤال جديد — احفظه
                     $sessionQuestion = \App\Models\SessionQuestion::create([
                         'session_id'     => $sessionId,
                         'slide_id'       => $slideId,
@@ -418,114 +423,110 @@ class SessionController extends Controller
         ]);
     }
 
-public function submitAnswer(Request $request, $id)
-{
-    $request->validate([
-        'slide_id'      => 'required|string',
-        'answer_index'  => 'nullable',
-        'answer_value'  => 'nullable|string',
-        'answer_rating' => 'nullable|integer',
-        'device_token'  => 'required|string',
-        'time_taken'    => 'nullable|integer',
-    ]);
-
-    $rawIndex    = $request->input('answer_index');
-    $answerIndex = ($rawIndex !== null && $rawIndex !== '') ? (int) $rawIndex : null;
-
-    $session     = Session::findOrFail($id);
-    $participant = $session->participants()
-        ->where('device_token', $request->device_token)
-        ->first();
-
-    if (!$participant) {
-    return response()->json([
-        'status'  => false,
-        'message' => 'Participant not found',
-        'debug'   => [
-            'sent_token'   => $request->device_token,
-            'valid_tokens' => $session->participants()->pluck('device_token'),
-        ]
-    ], 404);
-}
-
-    // ✅ جلب بيانات الشريحة أولاً دائماً
-    $slide        = $session->presentation->slides()->where('id', $request->slide_id)->first();
-    $content      = [];
-    $questionData = null;
-    $questionType = 'mcq';
-
-    if ($slide) {
-        $content      = is_string($slide->content)
-            ? (json_decode($slide->content, true) ?? [])
-            : ($slide->content ?? []);
-        $questionData = $content['questionData'] ?? null;
-        $questionType = strtolower($content['questionType'] ?? $questionData['type'] ?? 'mcq');
-        $correctIndex = $questionData['correctAnswer'] 
-        ?? $questionData['correct_answer'] 
-        ?? $questionData['correctIndex'] 
-        ?? null;
-    }
-
-    // ✅ إذا answer_index مش موجود، استخرجه من answer_value
-    if (is_null($answerIndex) && $request->filled('answer_value') && $questionData) {
-        $options = $questionData['options'] ?? $questionData['answers'] ?? [];
-        foreach ($options as $idx => $option) {
-            $optText = is_array($option) ? ($option['text'] ?? '') : $option;
-            if (mb_strtolower(trim($optText)) === mb_strtolower(trim($request->answer_value))) {
-                $answerIndex = $idx;
-                break;
-            }
-        }
-    }
-
-    $sq = \App\Models\SessionQuestion::where('session_id', $id)
-        ->where('slide_id', $request->slide_id)
-        ->first();
-        if (!$sq) {
-    $session = Session::findOrFail($id);
-    $sq = \App\Models\SessionQuestion::where('session_id', $id)
-        ->where('slide_id', (string) $session->current_slide_id)
-        ->whereNull('ended_at')
-        ->first();
-}
-
-    if (!$sq || $sq->isExpired()) {
-        return response()->json(['status' => false, 'message' => 'Question is closed'], 403);
-    }
-
-    $userKey       = "user_{$participant->id}_sq_{$sq->id}_started_at";
-    $userStartedAt = cache()->remember($userKey, 3600, fn() => now());
-
-    if (now()->greaterThan($userStartedAt->copy()->addSeconds($sq->user_duration))) {
-        return response()->json(['status' => false, 'message' => 'Your time has expired'], 403);
-    }
-
-    if (\App\Models\Response::where('session_id', $id)
-        ->where('slide_id', $request->slide_id)
-        ->where('participant_id', $participant->id)
-        ->exists()) {
-        return response()->json(['status' => false, 'message' => 'Already answered'], 409);
-    }
-
-    $correctIndex = null;
-    $isCorrect = false;
-    $points    = 0;
-
-    $choiceTypes = ['mcq', 'true_false', 'true-false', 'multiple-choice', 'truefalse'];
-
-    if (in_array($questionType, $choiceTypes) && !is_null($answerIndex)) {
-        $correctIndex = $questionData['correctAnswer']
-            ?? $questionData['correct_answer']
-            ?? $questionData['correctIndex']
-            ?? null;
-
-        \Log::info('ANSWER DEBUG', [
-            'answer_index'  => $answerIndex,
-            'correct_index' => $correctIndex,
-            'questionType'  => $questionType,
+    // ══════════════════════════════════════════════════════
+    // submitAnswer ✅ مصلّح كامل
+    // ══════════════════════════════════════════════════════
+    public function submitAnswer(Request $request, $id)
+    {
+        $request->validate([
+            'slide_id'      => 'required|string',
+            'answer_index'  => 'nullable',
+            'answer_value'  => 'nullable|string',
+            'answer_rating' => 'nullable|integer',
+            'device_token'  => 'required|string',
+            'time_taken'    => 'nullable|integer',
         ]);
 
-        if (!is_null($correctIndex)) {
+        $rawIndex    = $request->input('answer_index');
+        $answerIndex = ($rawIndex !== null && $rawIndex !== '') ? (int) $rawIndex : null;
+
+        $session     = Session::findOrFail($id);
+        $participant = $session->participants()
+            ->where('device_token', $request->device_token)
+            ->first();
+
+        if (!$participant) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Participant not found',
+                'debug'   => [
+                    'sent_token'   => $request->device_token,
+                    'valid_tokens' => $session->participants()->pluck('device_token'),
+                ]
+            ], 404);
+        }
+
+        // ✅ جلب بيانات الشريحة
+        $slide        = $session->presentation->slides()->where('id', $request->slide_id)->first();
+        $content      = [];
+        $questionData = null;
+        $questionType = 'mcq';
+        $correctIndex = null; // ✅ معرّف دائماً
+
+        if ($slide) {
+            $content      = is_string($slide->content)
+                ? (json_decode($slide->content, true) ?? [])
+                : ($slide->content ?? []);
+            $questionData = $content['questionData'] ?? null;
+            $questionType = strtolower($content['questionType'] ?? $questionData['type'] ?? 'mcq');
+            $correctIndex = $questionData['correctAnswer']
+                ?? $questionData['correct_answer']
+                ?? $questionData['correctIndex']
+                ?? null;
+        }
+
+        // ✅ استخراج answer_index من answer_value إذا مش موجود
+        if (is_null($answerIndex) && $request->filled('answer_value') && $questionData) {
+            $options = $questionData['options'] ?? $questionData['answers'] ?? [];
+            foreach ($options as $idx => $option) {
+                $optText = is_array($option) ? ($option['text'] ?? '') : $option;
+                if (mb_strtolower(trim($optText)) === mb_strtolower(trim($request->answer_value))) {
+                    $answerIndex = $idx;
+                    break;
+                }
+            }
+        }
+
+        // ✅ جلب SessionQuestion بالـ slide_id المرسل
+        $sq = \App\Models\SessionQuestion::where('session_id', $id)
+            ->where('slide_id', $request->slide_id)
+            ->whereNull('ended_at') // ✅ فقط السؤال المفتوح
+            ->first();
+
+        // ✅ لو مش موجود، جرب بـ current_slide_id
+        if (!$sq) {
+            $sq = \App\Models\SessionQuestion::where('session_id', $id)
+                ->where('slide_id', (string) $session->current_slide_id)
+                ->whereNull('ended_at')
+                ->first();
+        }
+
+        if (!$sq || $sq->isExpired()) {
+            return response()->json(['status' => false, 'message' => 'Question is closed'], 403);
+        }
+
+        // ✅ تحقق من وقت المستخدم
+        $userKey       = "user_{$participant->id}_sq_{$sq->id}_started_at";
+        $userStartedAt = cache()->remember($userKey, 3600, fn() => now());
+
+        if (now()->greaterThan($userStartedAt->copy()->addSeconds($sq->user_duration))) {
+            return response()->json(['status' => false, 'message' => 'Your time has expired'], 403);
+        }
+
+        // ✅ تحقق من الإجابة المكررة
+        if (\App\Models\Response::where('session_id', $id)
+            ->where('slide_id', $request->slide_id)
+            ->where('participant_id', $participant->id)
+            ->exists()) {
+            return response()->json(['status' => false, 'message' => 'Already answered'], 409);
+        }
+
+        // ✅ حساب is_correct و points
+        $isCorrect   = false;
+        $points      = 0;
+        $choiceTypes = ['mcq', 'true_false', 'true-false', 'multiple-choice', 'truefalse'];
+
+        if (in_array($questionType, $choiceTypes) && !is_null($answerIndex) && !is_null($correctIndex)) {
             $isCorrect = ((int) $answerIndex === (int) $correctIndex);
             if ($isCorrect) {
                 $maxTime = $sq->user_duration;
@@ -533,41 +534,29 @@ public function submitAnswer(Request $request, $id)
                 $points  = (int) round(1000 * (1 - ($taken / $maxTime) * 0.5));
             }
         }
+
+        $response = \App\Models\Response::create([
+            'session_id'     => $id,
+            'slide_id'       => $request->slide_id,
+            'participant_id' => $participant->id,
+            'answer_index'   => $answerIndex,
+            'answer_value'   => $request->answer_value  ?? null,
+            'answer_rating'  => $request->answer_rating ?? null,
+            'time_taken'     => $request->time_taken    ?? 0,
+            'is_correct'     => $isCorrect,
+            'points'         => $points,
+        ]);
+
+        return response()->json([
+            'status'  => true,
+            'message' => 'Answer submitted successfully',
+            'data'    => [
+                'response_id' => $response->id,
+                'is_correct'  => $isCorrect,
+                'points'      => $points,
+            ],
+        ]);
     }
-
-    $response = \App\Models\Response::create([
-        'session_id'     => $id,
-        'slide_id'       => $request->slide_id,
-        'participant_id' => $participant->id,
-        'answer_index'   => $answerIndex,  // ✅ الآن محفوظ صح
-        'answer_value'   => $request->answer_value  ?? null,
-        'answer_rating'  => $request->answer_rating ?? null,
-        'time_taken'     => $request->time_taken    ?? 0,
-        'is_correct'     => $isCorrect,
-        'points'         => $points,
-    ]);
-
-    return response()->json([
-    'status'  => true,
-    'message' => 'Answer submitted successfully',
-    'data'    => [
-        'response_id'  => $response->id,
-        'is_correct'   => $isCorrect,
-        'points'       => $points,
-        // ← أضف هاد مؤقتاً للتشخيص
-        '_debug' => [
-            'answer_index_sent'    => $request->input('answer_index'),
-            'answer_index_parsed'  => $answerIndex,
-            'correct_index'        => $correctIndex ?? 'NOT FOUND',
-            'question_type'        => $questionType,
-            'question_data_keys'   => $questionData ? array_keys($questionData) : 'NULL',
-            'correct_answer_raw'   => $questionData['correctAnswer'] ?? 'missing',
-            'correct_answer2_raw'  => $questionData['correct_answer'] ?? 'missing',
-            'correct_index_raw'    => $questionData['correctIndex'] ?? 'missing',
-        ],
-    ],
-]);
-}
 
     // ══════════════════════════════════════════════════════
     // revealResults / hideResults
@@ -694,6 +683,7 @@ public function submitAnswer(Request $request, $id)
 
         $sq = \App\Models\SessionQuestion::where('session_id', $sessionId)
             ->where('slide_id', (string) $session->current_slide_id)
+            ->whereNull('ended_at')
             ->first();
 
         if (!$sq) {
@@ -726,7 +716,7 @@ public function submitAnswer(Request $request, $id)
     }
 
     // ══════════════════════════════════════════════════════
-    // closeQuestion ✅ مصلّح
+    // closeQuestion
     // ══════════════════════════════════════════════════════
     public function closeQuestion($sessionId)
     {
@@ -742,7 +732,6 @@ public function submitAnswer(Request $request, $id)
             return response()->json(['status' => false, 'message' => 'No active question found'], 404);
         }
 
-        // ✅ دائماً احفظ — سواء انتهى بالوقت أو لسه شغال
         $sq->update([
             'ended_at'      => $sq->ended_at ?? now(),
             'closed_reason' => $sq->closed_reason ?? 'manual',
@@ -763,7 +752,7 @@ public function submitAnswer(Request $request, $id)
     }
 
     // ══════════════════════════════════════════════════════
-    // questionReport — helpers
+    // questionReport
     // ══════════════════════════════════════════════════════
     public function questionReport($sessionId, $slideId)
     {
@@ -785,7 +774,7 @@ public function submitAnswer(Request $request, $id)
         $questionType = strtolower($content['questionType'] ?? $questionData['type'] ?? 'mcq');
         $questionText = $questionData['question'] ?? $content['title'] ?? '';
         $options      = $questionData['options']   ?? $questionData['answers'] ?? [];
-        $correctIndex = $questionData['correct_answer'] ?? $questionData['correctAnswer'] ?? null;
+        $correctIndex = $questionData['correctAnswer'] ?? $questionData['correct_answer'] ?? $questionData['correctIndex'] ?? null;
 
         $totalParticipants = $session->participants()->count();
         $responses         = \App\Models\Response::where('session_id', $sessionId)
@@ -796,12 +785,10 @@ public function submitAnswer(Request $request, $id)
         $totalResponses = $responses->count();
         $noAnswer       = max(0, $totalParticipants - $totalResponses);
         $avgTime = $responses->where('time_taken', '>', 0)->count() > 0
-    ? round($responses->where('time_taken', '>', 0)->avg('time_taken'), 1)
-    : null;
+            ? round($responses->where('time_taken', '>', 0)->avg('time_taken'), 1)
+            : null;
 
-       $isChoiceType = in_array($questionType, ['mcq', 'true_false', 'true-false', 'multiple-choice', 'truefalse']);
         $isChoiceType = in_array($questionType, ['mcq', 'true_false', 'true-false', 'multiple-choice', 'truefalse']);
-
 
         if ($isChoiceType) {
             $typeStats = $this->buildChoiceStats($responses, $options, $correctIndex, $totalResponses);
@@ -818,9 +805,9 @@ public function submitAnswer(Request $request, $id)
 
         $leaderboard = null;
         if ($isChoiceType) {
-           $leaderboard = \App\Models\Response::where('responses.session_id', $sessionId)
+            $leaderboard = \App\Models\Response::where('responses.session_id', $sessionId)
                 ->where('responses.slide_id', (string) $slideId)
-                ->where('responses.is_correct', true) 
+                ->where('responses.is_correct', true)
                 ->join('participants', 'responses.participant_id', '=', 'participants.id')
                 ->select('participants.nickname', 'responses.points', 'responses.time_taken', 'responses.is_correct')
                 ->orderByDesc('responses.points')
@@ -833,14 +820,14 @@ public function submitAnswer(Request $request, $id)
             'status' => true,
             'data'   => [
                 'question' => [
-                    'slide_id'      => $slideId,
-                    'type'          => $questionType,
-                    'text'          => $questionText,
-                    'correct_index' => $correctIndex,
+                    'slide_id'       => $slideId,
+                    'type'           => $questionType,
+                    'text'           => $questionText,
+                    'correct_index'  => $correctIndex,
                     'correct_answer' => isset($options[(int)$correctIndex])
-                    ? (is_array($options[(int)$correctIndex]) ? $options[(int)$correctIndex]['text'] : $options[(int)$correctIndex])
-                    : null,
-                    'options'       => $options,
+                        ? (is_array($options[(int)$correctIndex]) ? $options[(int)$correctIndex]['text'] : $options[(int)$correctIndex])
+                        : null,
+                    'options'        => $options,
                 ],
                 'timing' => [
                     'started_at'     => $sq->started_at,
