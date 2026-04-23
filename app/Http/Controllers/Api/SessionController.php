@@ -621,7 +621,7 @@ if (now()->greaterThan($userDeadline)) {
         $participants = $session->participants()->count();
 
         $allResponses = \App\Models\Response::where('session_id', $sessionId)
-            ->selectRaw('slide_id, answer_index, COUNT(*) as count, SUM(is_correct) as correct_count, AVG(time_taken) as avg_time')
+            ->selectRaw('slide_id, answer_index, COUNT(*) as count, SUM(CAST(is_correct AS integer)) as correct_count, AVG(time_taken) as avg_time')
             ->groupBy('slide_id', 'answer_index')
             ->get();
 
@@ -639,7 +639,7 @@ if (now()->greaterThan($userDeadline)) {
 
         $leaderboard = \App\Models\Response::where('session_id', $sessionId)
             ->join('participants', 'responses.participant_id', '=', 'participants.id')
-            ->selectRaw('participants.nickname, SUM(responses.points) as total_points, SUM(responses.is_correct) as correct_answers')
+            ->selectRaw('participants.nickname, SUM(responses.points) as total_points, SUM(CAST(responses.is_correct AS integer)) as correct_answers')
             ->groupBy('participants.id', 'participants.nickname')
             ->orderByDesc('total_points')
             ->limit(20)
