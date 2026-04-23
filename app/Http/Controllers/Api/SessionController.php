@@ -637,13 +637,14 @@ if (now()->greaterThan($userDeadline)) {
             $slideStats[$sid]['options'][] = ['index' => $r->answer_index, 'count' => $r->count];
         }
 
-        $leaderboard = \App\Models\Response::where('session_id', $sessionId)
-            ->join('participants', 'responses.participant_id', '=', 'participants.id')
-            ->selectRaw('participants.nickname, SUM(responses.points) as total_points, SUM(CAST(responses.is_correct AS integer)) as correct_answers')
-            ->groupBy('participants.id', 'participants.nickname')
-            ->orderByDesc('total_points')
-            ->limit(20)
-            ->get();
+        // ✅ بعد — أضفنا responses.session_id بدل session_id فقط
+    $leaderboard = \App\Models\Response::where('responses.session_id', $sessionId)
+        ->join('participants', 'responses.participant_id', '=', 'participants.id')
+        ->selectRaw('participants.nickname, SUM(responses.points) as total_points, SUM(CAST(responses.is_correct AS integer)) as correct_answers')
+        ->groupBy('participants.id', 'participants.nickname')
+        ->orderByDesc('total_points')
+        ->limit(20)
+        ->get();
 
         $report = [
             'session_id'         => $sessionId,
