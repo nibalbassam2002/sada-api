@@ -505,13 +505,11 @@ class SessionController extends Controller
             return response()->json(['status' => false, 'message' => 'Question is closed'], 403);
         }
 
-        // ✅ تحقق من وقت المستخدم
-        $userKey       = "user_{$participant->id}_sq_{$sq->id}_started_at";
-        $userStartedAt = cache()->remember($userKey, 3600, fn() => now());
-
-        if (now()->greaterThan($userStartedAt->copy()->addSeconds($sq->user_duration))) {
-            return response()->json(['status' => false, 'message' => 'Your time has expired'], 403);
-        }
+      // تحقق من وقت المستخدم بدون cache
+$userDeadline = $sq->started_at->copy()->addSeconds($sq->user_duration + 5); // +5 ثواني تسامح
+if (now()->greaterThan($userDeadline)) {
+    return response()->json(['status' => false, 'message' => 'Your time has expired'], 403);
+}
 
         // ✅ تحقق من الإجابة المكررة
         if (\App\Models\Response::where('session_id', $id)
@@ -694,9 +692,7 @@ class SessionController extends Controller
             return response()->json(['status' => true, 'data' => ['is_active' => false, 'reason' => 'question_closed']]);
         }
 
-        $userKey       = "user_{$participant->id}_sq_{$sq->id}_started_at";
-        $userStartedAt = cache()->remember($userKey, 3600, fn() => now());
-        $userDeadline  = $userStartedAt->copy()->addSeconds($sq->user_duration);
+        $userDeadline = $sq->started_at->copy()->addSeconds($sq->user_duration);
         $remaining     = (int) now()->diffInSeconds($userDeadline, false);
 
         if ($remaining <= 0) {
