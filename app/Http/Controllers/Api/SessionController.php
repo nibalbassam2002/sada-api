@@ -460,6 +460,10 @@ public function submitAnswer(Request $request, $id)
             : ($slide->content ?? []);
         $questionData = $content['questionData'] ?? null;
         $questionType = strtolower($content['questionType'] ?? $questionData['type'] ?? 'mcq');
+        $correctIndex = $questionData['correctAnswer'] 
+        ?? $questionData['correct_answer'] 
+        ?? $questionData['correctIndex'] 
+        ?? null;
     }
 
     // ✅ إذا answer_index مش موجود، استخرجه من answer_value
@@ -503,7 +507,7 @@ public function submitAnswer(Request $request, $id)
         return response()->json(['status' => false, 'message' => 'Already answered'], 409);
     }
 
-    // ✅ حساب is_correct و points
+    $correctIndex = null;
     $isCorrect = false;
     $points    = 0;
 
