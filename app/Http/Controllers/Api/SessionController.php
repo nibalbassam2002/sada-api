@@ -671,8 +671,9 @@ if (now()->greaterThan($userDeadline)) {
         }
 
         // جلب الإجابات الفردية
-        $stat['responses'] = \App\Models\Response::where('session_id', $sessionId)
-            ->where('slide_id', $sid)
+       // في generateReport، داخر foreach slideStats
+        $stat['responses'] = \App\Models\Response::where('responses.session_id', $sessionId)
+            ->where('responses.slide_id', $sid)
             ->join('participants', 'responses.participant_id', '=', 'participants.id')
             ->select(
                 'participants.nickname',
