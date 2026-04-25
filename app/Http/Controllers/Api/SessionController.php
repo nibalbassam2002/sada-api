@@ -70,9 +70,7 @@ class SessionController extends Controller
         return response()->json(['status' => true, 'data' => ['status' => $session->status]]);
     }
 
-    // ══════════════════════════════════════════════════════
-    // changeSlide ✅ مصلّح — يحذف القديم المنتهي ويخلق جديد
-    // ══════════════════════════════════════════════════════
+    
     public function changeSlide(Request $request, $sessionId)
     {
         $request->validate([
@@ -115,18 +113,15 @@ class SessionController extends Controller
                 $totalDuration = (int) ($questionData['total_duration'] ?? 900);
                 $userDuration  = (int) ($questionData['user_duration']  ?? 30);
 
-                // ✅ ابحث عن سؤال موجود
                 $sessionQuestion = \App\Models\SessionQuestion::where('session_id', $sessionId)
                     ->where('slide_id', $slideId)
                     ->first();
 
-                // ✅ لو موجود ومنتهي أو مغلق — احذفه وابدأ جديد
                 if ($sessionQuestion && ($sessionQuestion->isExpired() || $sessionQuestion->ended_at !== null)) {
                     $sessionQuestion->delete();
                     $sessionQuestion = null;
                 }
 
-                // ✅ لو مش موجود — احفظه
                 if (!$sessionQuestion) {
                     $sessionQuestion = \App\Models\SessionQuestion::create([
                         'session_id'     => $sessionId,
@@ -423,9 +418,7 @@ class SessionController extends Controller
         ]);
     }
 
-    // ══════════════════════════════════════════════════════
-    // submitAnswer ✅ مصلّح كامل
-    // ══════════════════════════════════════════════════════
+    
     public function submitAnswer(Request $request, $id)
     {
         $request->validate([
@@ -456,12 +449,12 @@ class SessionController extends Controller
             ], 404);
         }
 
-        // ✅ جلب بيانات الشريحة
+    
         $slide        = $session->presentation->slides()->where('id', $request->slide_id)->first();
         $content      = [];
         $questionData = null;
         $questionType = 'mcq';
-        $correctIndex = null; // ✅ معرّف دائماً
+        $correctIndex = null; 
 
         if ($slide) {
             $content      = is_string($slide->content)
@@ -475,7 +468,6 @@ class SessionController extends Controller
                 ?? null;
         }
 
-        // ✅ استخراج answer_index من answer_value إذا مش موجود
         if (is_null($answerIndex) && $request->filled('answer_value') && $questionData) {
             $options = $questionData['options'] ?? $questionData['answers'] ?? [];
             foreach ($options as $idx => $option) {
@@ -487,13 +479,11 @@ class SessionController extends Controller
             }
         }
 
-        // ✅ جلب SessionQuestion بالـ slide_id المرسل
         $sq = \App\Models\SessionQuestion::where('session_id', $id)
             ->where('slide_id', $request->slide_id)
-            ->whereNull('ended_at') // ✅ فقط السؤال المفتوح
+            ->whereNull('ended_at') //  فقط السؤال المفتوح
             ->first();
 
-        // ✅ لو مش موجود، جرب بـ current_slide_id
         if (!$sq) {
             $sq = \App\Models\SessionQuestion::where('session_id', $id)
                 ->where('slide_id', (string) $session->current_slide_id)
@@ -505,13 +495,11 @@ class SessionController extends Controller
             return response()->json(['status' => false, 'message' => 'Question is closed'], 403);
         }
 
-      // تحقق من وقت المستخدم بدون cache
 $userDeadline = $sq->started_at->copy()->addSeconds($sq->user_duration + 5); // +5 ثواني تسامح
 if (now()->greaterThan($userDeadline)) {
     return response()->json(['status' => false, 'message' => 'Your time has expired'], 403);
 }
 
-        // ✅ تحقق من الإجابة المكررة
         if (\App\Models\Response::where('session_id', $id)
             ->where('slide_id', $request->slide_id)
             ->where('participant_id', $participant->id)
@@ -637,7 +625,6 @@ if (now()->greaterThan($userDeadline)) {
             $slideStats[$sid]['options'][] = ['index' => $r->answer_index, 'count' => $r->count];
         }
 
-        // ✅ بعد — أضفنا responses.session_id بدل session_id فقط
     $leaderboard = \App\Models\Response::where('responses.session_id', $sessionId)
         ->join('participants', 'responses.participant_id', '=', 'participants.id')
         ->selectRaw('participants.nickname, SUM(responses.points) as total_points, SUM(CAST(responses.is_correct AS integer)) as correct_answers')
@@ -646,9 +633,8 @@ if (now()->greaterThan($userDeadline)) {
         ->limit(20)
         ->get();
 
-       // ✅ أضف الإجابات الفردية + بيانات الأسئلة لكل شريحة
+     
     foreach ($slideStats as $sid => &$stat) {
-        // جلب بيانات السؤال من الـ slide
         $dbSlide = $session->presentation->slides()->where('id', $sid)->first();
         if ($dbSlide) {
             $slideContent = is_string($dbSlide->content)
@@ -670,8 +656,6 @@ if (now()->greaterThan($userDeadline)) {
             })->values()->toArray();
         }
 
-        // جلب الإجابات الفردية
-       // في generateReport، داخر foreach slideStats
         $stat['responses'] = \App\Models\Response::where('responses.session_id', $sessionId)
             ->where('responses.slide_id', $sid)
             ->join('participants', 'responses.participant_id', '=', 'participants.id')
