@@ -646,15 +646,57 @@ if (now()->greaterThan($userDeadline)) {
         ->limit(20)
         ->get();
 
-        $report = [
-            'session_id'         => $sessionId,
-            'presentation_title' => $session->presentation->title,
-            'total_participants' => $participants,
-            'total_questions'    => count($slideStats),
-            'slide_stats'        => array_values($slideStats),
-            'leaderboard'        => $leaderboard,
-            'generated_at'       => now()->toDateTimeString(),
-        ];
+       // ✅ أضف الإجابات الفردية + بيانات الأسئلة لكل شريحة
+    foreach ($slideStats as $sid => &$stat) {
+        // جلب بيانات السؤال من الـ slide
+        $dbSlide = $session->presentation->slides()->where('id', $sid)->first();
+        if ($dbSlide) {
+            $slideContent = is_string($dbSlide->content)
+                ? (json_decode($dbSlide->content, true) ?? [])
+                : ($dbSlide->content ?? []);
+            $qData = $slideContent['questionData'] ?? null;
+            $stat['question_text'] = $qData['title'] ?? $slideContent['title'] ?? '';
+            $stat['options'] = collect($qData['options'] ?? [])->map(function($opt, $i) use ($qData, $stat) {
+                $correctIndex = $qData['correctAnswer'] ?? $qData['correctIndex'] ?? null;
+                $count = collect($stat['options'])->firstWhere('index', $i)['count'] ?? 0;
+                $total = $stat['total'] > 0 ? $stat['total'] : 1;
+                return [
+                    'index'      => $i,
+                    'text'       => is_array($opt) ? ($opt['text'] ?? '') : $opt,
+                    'count'      => $count,
+                    'percent'    => round(($count / $total) * 100),
+                    'is_correct' => !is_null($correctIndex) && (int)$i === (int)$correctIndex,
+                ];
+            })->values()->toArray();
+        }
+
+        // جلب الإجابات الفردية
+        $stat['responses'] = \App\Models\Response::where('session_id', $sessionId)
+            ->where('slide_id', $sid)
+            ->join('participants', 'responses.participant_id', '=', 'participants.id')
+            ->select(
+                'participants.nickname',
+                'responses.answer_value',
+                'responses.answer_index',
+                'responses.is_correct',
+                'responses.time_taken',
+                'responses.points'
+            )
+            ->orderByDesc('responses.points')
+            ->get()
+            ->toArray();
+    }
+    unset($stat);
+
+    $report = [
+        'session_id'         => $sessionId,
+        'presentation_title' => $session->presentation->title,
+        'total_participants' => $participants,
+        'total_questions'    => count($slideStats),
+        'slide_stats'        => array_values($slideStats),
+        'leaderboard'        => $leaderboard,
+        'generated_at'       => now()->toDateTimeString(),
+    ];
 
         \App\Models\Report::updateOrCreate(
             ['session_id' => $sessionId],
