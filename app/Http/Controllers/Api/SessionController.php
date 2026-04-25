@@ -941,4 +941,23 @@ if (now()->greaterThan($userDeadline)) {
             'distribution' => $distribution,
         ];
     }
+    public function listSessions($presentationId)
+{
+    Presentation::where('user_id', auth()->id())->findOrFail($presentationId);
+
+    $sessions = Session::where('presentation_id', $presentationId)
+        ->orderByDesc('created_at')
+        ->get()
+        ->map(fn($s) => [
+            'session_id'         => $s->id,
+            'access_code'        => $s->access_code,
+            'status'             => $s->status,
+            'participants_count' => $s->participants()->count(),
+            'started_at'         => $s->started_at,
+            'ended_at'           => $s->ended_at,
+            'created_at'         => $s->created_at,
+        ]);
+
+    return response()->json(['status' => true, 'data' => $sessions]);
+}
 }

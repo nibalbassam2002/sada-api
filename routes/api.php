@@ -49,6 +49,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Sessions (presenter) 
     Route::post('presentations/{id}/sessions/start', [SessionController::class, 'start']);
     Route::get( 'presentations/{id}/sessions/current',[SessionController::class, 'current']);
+    Route::get('presentations/{id}/sessions', [SessionController::class, 'listSessions']);
 
     Route::post('sessions/{id}/launch',         [SessionController::class, 'launch']);
     Route::post('sessions/{id}/slide',          [SessionController::class, 'changeSlide']);
