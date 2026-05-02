@@ -19,7 +19,7 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['http://localhost:5173'],
+    'allowed_origins' => ['https://sada-frontend-vvv7.vercel.app', 'http://localhost:5173'],
 
     'allowed_origins_patterns' => [],
 
