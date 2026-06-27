@@ -135,7 +135,7 @@ class AuthController extends Controller
             $token = $user->createToken('auth_token')->plainTextToken;
 
             
-            return redirect('http://localhost:5173/login?token=' . $token . '&user=' . urlencode(json_encode($user)));
+            return redirect(env('FRONTEND_URL') . '/login?token=' . $token . '&user=' . urlencode(json_encode($user)));
 
         } catch (\Exception $e) {
             return response()->json(['message' => 'Google authentication failed', 'error' => $e->getMessage()], 500);
